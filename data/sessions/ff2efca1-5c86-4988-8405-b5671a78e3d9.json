@@ -1,0 +1,35 @@
+{
+  "session_id": "ff2efca1-5c86-4988-8405-b5671a78e3d9",
+  "messages": [
+    {
+      "role": "user",
+      "content": "Hola.",
+      "timestamp": "2025-09-21T16:37:55.164299",
+      "metadata": {}
+    },
+    {
+      "role": "assistant",
+      "content": "¡Hola! ¿En qué puedo ayudarte hoy?",
+      "timestamp": "2025-09-21T16:37:57.652440",
+      "metadata": {}
+    },
+    {
+      "role": "user",
+      "content": "Necessito ayuda con mi amor.",
+      "timestamp": "2025-09-21T16:38:20.964939",
+      "metadata": {}
+    },
+    {
+      "role": "assistant",
+      "content": "Entiendo. Estoy aquí para escucharte. ¿Qué está pasando con tu relación? Puedo ofrecerte consejos o escucharte si necesitas hablar.",
+      "timestamp": "2025-09-21T16:38:22.517467",
+      "metadata": {}
+    }
+  ],
+  "created_at": "2025-09-21T16:37:50.056344",
+  "updated_at": "2025-09-21T16:38:22.517522",
+  "metadata": {},
+  "tags": [],
+  "description": "",
+  "model_used": null
+}

@@ -1,0 +1,23 @@
+{
+  "session_id": "5e3f5da4-aefc-4d18-b9b3-8e8e320c1855",
+  "messages": [
+    {
+      "role": "user",
+      "content": "Greetings.",
+      "timestamp": "2025-09-21T16:37:17.404517",
+      "metadata": {}
+    },
+    {
+      "role": "assistant",
+      "content": "Hello! How are you doing today? Is there anything I can help you with?",
+      "timestamp": "2025-09-21T16:37:18.318743",
+      "metadata": {}
+    }
+  ],
+  "created_at": "2025-09-21T16:37:17.386899",
+  "updated_at": "2025-09-21T16:37:18.318768",
+  "metadata": {},
+  "tags": [],
+  "description": "",
+  "model_used": null
+}
