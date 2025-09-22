@@ -13,6 +13,7 @@ from datetime import datetime
 
 from .chat_manager import ChatManager
 from .chat_session import ChatSession
+from .quirkbot import load_personas, get_random_persona, generate_system_prompt, extract_persona_name_age
 
 app = FastAPI()
 
@@ -65,6 +66,52 @@ async def create_new_session(request: NewSessionRequest):
         "created_at": session.created_at.isoformat()
     }
 
+@app.post("/api/quirkbot/random")
+async def create_quirkbot_session():
+    # Load personas from benchmark
+    personas_path = Path(__file__).parent.parent / "benchmarks" / "quirkbot_benchmark_v0.json"
+    if not personas_path.exists():
+        raise HTTPException(status_code=404, detail="Persona benchmark file not found")
+
+    # Get a random persona
+    personas_data = load_personas(str(personas_path))
+    persona = get_random_persona(personas_data)
+
+    # Extract name and age for display
+    name, age = extract_persona_name_age(persona['natural_narrative'])
+
+    # Generate system prompt
+    system_prompt = generate_system_prompt(persona)
+
+    # Create a new session with the persona
+    session_id = str(uuid.uuid4())
+    description = f"Quirkbot: {name}, {age}"
+
+    session = ChatSession(
+        session_id=session_id,
+        description=description,
+        tags=["quirkbot"]
+    )
+
+    # Store persona info in session metadata
+    session.metadata = {
+        "is_quirkbot": True,
+        "persona_id": persona["bio_id"],
+        "persona_name": name,
+        "persona_age": age,
+        "system_prompt": system_prompt
+    }
+
+    chat_manager.storage.save_session(session)
+
+    return {
+        "session_id": session_id,
+        "persona_name": name,
+        "persona_age": age,
+        "persona_id": persona["bio_id"],
+        "created_at": session.created_at.isoformat()
+    }
+
 @app.get("/api/sessions")
 async def list_sessions():
     sessions = chat_manager.storage.list_sessions()
@@ -96,8 +143,15 @@ async def send_message(session_id: str, request: MessageRequest):
     chat_manager.current_session = session
     session.add_message("user", request.message)
 
+    # Prepare messages with system prompt if quirkbot
+    messages = [msg.model_dump() for msg in session.messages]
+    if hasattr(session, 'metadata') and session.metadata and session.metadata.get('is_quirkbot'):
+        system_prompt = session.metadata.get('system_prompt')
+        if system_prompt:
+            messages = [{"role": "system", "content": system_prompt}] + messages
+
     response = await chat_manager.llm_client.chat_async(
-        messages=[msg.model_dump() for msg in session.messages],
+        messages=messages,
         stream=False
     )
 
@@ -116,9 +170,16 @@ async def generate_stream(session_id: str, message: str) -> AsyncGenerator[str, 
         chat_manager.current_session = session
         session.add_message("user", message)
 
+        # Prepare messages with system prompt if quirkbot
+        messages = [msg.model_dump() for msg in session.messages]
+        if hasattr(session, 'metadata') and session.metadata and session.metadata.get('is_quirkbot'):
+            system_prompt = session.metadata.get('system_prompt')
+            if system_prompt:
+                messages = [{"role": "system", "content": system_prompt}] + messages
+
         full_response = ""
         async for chunk in chat_manager.llm_client.chat_stream_async(
-            messages=[msg.model_dump() for msg in session.messages]
+            messages=messages
         ):
             full_response += chunk
             yield json.dumps({'chunk': chunk})

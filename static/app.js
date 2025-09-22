@@ -6,6 +6,7 @@ const messagesDiv = document.getElementById('messages');
 const messageInput = document.getElementById('messageInput');
 const sendBtn = document.getElementById('sendBtn');
 const newSessionBtn = document.getElementById('newSessionBtn');
+const quirkbotBtn = document.getElementById('quirkbotBtn');
 const sessionInfo = document.getElementById('sessionInfo');
 const sessionsList = document.getElementById('sessionsList');
 const loading = document.getElementById('loading');
@@ -134,10 +135,19 @@ function escapeHtml(text) {
 
 function updateSessionInfo() {
     if (currentSessionId) {
-        const shortId = currentSessionId.substring(0, 8);
-        sessionInfo.textContent = `Session: ${shortId}`;
+        if (currentSession && currentSession.metadata && currentSession.metadata.is_quirkbot) {
+            const name = currentSession.metadata.persona_name || 'Unknown';
+            const age = currentSession.metadata.persona_age || 'Unknown';
+            sessionInfo.innerHTML = `<strong>Quirkbot:</strong> ${name}, ${age}`;
+            sessionInfo.style.color = '#9b59b6';
+        } else {
+            const shortId = currentSessionId.substring(0, 8);
+            sessionInfo.textContent = `Session: ${shortId}`;
+            sessionInfo.style.color = '';
+        }
     } else {
         sessionInfo.textContent = 'New chat';
+        sessionInfo.style.color = '';
     }
 }
 
@@ -309,7 +319,32 @@ async function createNewSession(autoCreate = false) {
     }
 }
 
+async function createQuirkbotSession() {
+    try {
+        const response = await fetch('/api/quirkbot/random', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' }
+        });
+
+        if (!response.ok) {
+            throw new Error('Failed to create quirkbot session');
+        }
+
+        const data = await response.json();
+
+        currentSessionId = data.session_id;
+
+        // Load the full session to get all metadata
+        await loadSession(currentSessionId);
+
+    } catch (error) {
+        console.error('Error creating quirkbot session:', error);
+        showError('Failed to create quirkbot session');
+    }
+}
+
 newSessionBtn.onclick = showModal;
+quirkbotBtn.onclick = createQuirkbotSession;
 sendBtn.onclick = sendMessage;
 
 messageInput.addEventListener('keydown', (e) => {
