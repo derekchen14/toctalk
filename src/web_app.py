@@ -13,7 +13,7 @@ from datetime import datetime
 
 from .chat_manager import ChatManager
 from .chat_session import ChatSession
-from .quirkbot import load_personas, get_random_persona, generate_system_prompt, extract_persona_name_age
+from .quirkbot import load_personas, get_random_persona, generate_system_prompt, extract_persona_name_age, generate_interviewer_system_prompt
 
 app = FastAPI()
 
@@ -112,6 +112,35 @@ async def create_quirkbot_session():
         "created_at": session.created_at.isoformat()
     }
 
+@app.post("/api/quirkbot/interviewer")
+async def create_interviewer_session():
+    # Generate interviewer system prompt
+    system_prompt = generate_interviewer_system_prompt()
+
+    # Create a new session for the interviewer
+    session_id = str(uuid.uuid4())
+    description = "Quirkbot Interviewer"
+
+    session = ChatSession(
+        session_id=session_id,
+        description=description,
+        tags=["quirkbot-interviewer"]
+    )
+
+    # Store interviewer info in session metadata
+    session.metadata = {
+        "is_interviewer": True,
+        "system_prompt": system_prompt
+    }
+
+    chat_manager.storage.save_session(session)
+
+    return {
+        "session_id": session_id,
+        "description": description,
+        "created_at": session.created_at.isoformat()
+    }
+
 @app.get("/api/sessions")
 async def list_sessions():
     sessions = chat_manager.storage.list_sessions()
@@ -143,12 +172,13 @@ async def send_message(session_id: str, request: MessageRequest):
     chat_manager.current_session = session
     session.add_message("user", request.message)
 
-    # Prepare messages with system prompt if quirkbot
+    # Prepare messages with system prompt if quirkbot or interviewer
     messages = [msg.model_dump() for msg in session.messages]
-    if hasattr(session, 'metadata') and session.metadata and session.metadata.get('is_quirkbot'):
-        system_prompt = session.metadata.get('system_prompt')
-        if system_prompt:
-            messages = [{"role": "system", "content": system_prompt}] + messages
+    if hasattr(session, 'metadata') and session.metadata:
+        if session.metadata.get('is_quirkbot') or session.metadata.get('is_interviewer'):
+            system_prompt = session.metadata.get('system_prompt')
+            if system_prompt:
+                messages = [{"role": "system", "content": system_prompt}] + messages
 
     response = await chat_manager.llm_client.chat_async(
         messages=messages,

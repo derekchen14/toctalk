@@ -52,7 +52,44 @@ toctalk/
 - Automatic session persistence
 - Session management (create, load, delete)
 - Server-Sent Events for streaming responses
+- Quirkbot personas for conversational experiments
+- Quirkbot interviewer with note-taking capabilities
 - No frontend framework dependencies
+
+## Quirkbot Interviewer
+
+The interviewer agent helps discover quirky biographical facts through conversation:
+
+```python
+# Create an interviewer session
+POST /api/quirkbot/interviewer
+
+# The interviewer takes notes using <note> tags during conversation
+# Notes can be parsed using src/note_parser.py utilities
+```
+
+See `examples/interviewer_usage.py` for a complete example.
+
+## Quirkbot Evaluation
+
+Evaluate how well an interviewer discovered embedded facts in a QuirkBot session:
+
+```bash
+# Evaluate a single session
+python src/quirkbot_evaluator.py data/sessions/SESSION_ID.json
+
+# Generate a test interview session with automated agents
+python tmp_scripts/run_interviewer_session.py
+
+# The evaluator outputs:
+# - Discovery rate (% of facts found)
+# - Facts per turn
+# - Facts per 1k tokens
+# - Detailed analysis of each fact
+# - JSON results saved to data/evaluations/
+```
+
+The evaluator uses LLM-based semantic matching to determine if facts were discovered, even if worded differently in the interviewer's notes.
 
 ## Development
 
