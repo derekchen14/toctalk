@@ -18,13 +18,21 @@ echo "ANTHROPIC_API_KEY=your-key-here" > .env
 
 ## Usage
 
+### Interactive Web Chat
+
 ```bash
 # Start the web server
 source venv/bin/activate
 python run_web_app.py
 ```
-
 Open http://localhost:8000 in your browser to start chatting.
+
+### Model Training
+
+```bash
+# Train the model
+!python training.py --config receipes/sft_args.yaml
+```
 
 ## Project Structure
 
@@ -96,3 +104,15 @@ The evaluator uses LLM-based semantic matching to determine if facts were discov
 Sessions are automatically saved to `data/sessions/` as JSON files. Each session includes metadata (tags, description) and full conversation history with timestamps.
 
 Default model: `claude-3-5-haiku-20241022` (configurable in `src/llm_client.py`)
+
+## Possible Datasets
+
+These datasets are directly available on Huggingface and conversational in nature:
+ - goendalf666/sales-conversations (3,412 rows)
+     - train the model to sound more like a salesperson
+ - flammenai/casual-conversation-DPO (3,725 rows)
+     - train the model to sound more casual, or more like AI slop
+ - DeepMostInnovations/saas-sales-conversations (100K rows)
+     - sounds like a salesperson, but also includes:
+     - Engagement metrics, sales effectiveness scores, Conversion outcome
+ 

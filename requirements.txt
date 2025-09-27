@@ -3,8 +3,9 @@ trl
 fastapi
 peft
 bitsandbytes
-transformers
+transformers==4.56.2
 torch
+accelerate
 python-dotenv==1.0.1
 pydantic==2.9.2
 uvicorn[standard]==0.30.6

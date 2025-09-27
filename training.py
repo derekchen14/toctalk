@@ -8,14 +8,15 @@ from dataclasses import dataclass
 from datetime import datetime
 # os.environ["HF_HUB_ENABLE_HF_TRANSFER"] = "1"
 
-from peft import AutoPeftModelForCausalLM
+from peft import AutoPeftModelForCausalLM, LoraConfig
 from transformers import AutoModelForCausalLM, AutoTokenizer, set_seed, BitsAndBytesConfig
 # from liger_kernel.transformers import AutoLigerKernelForCausalLM
 
-from trl import SFTTrainer, TrlParser, ModelConfig, SFTConfig, get_peft_config
+from trl import SFTTrainer, ModelConfig, SFTConfig, get_peft_config
 from datasets import load_dataset
-from utils.helpers import get_checkpoint, create_conversation
-from utils.rewards import format_reward_func, equation_reward_func, length_penalty_func
+from utils.helpers import get_checkpoint, create_conversation, get_device_info, get_model_name
+from utils.arguments import parse_arguments
+from utils.rewards import reasoning_format_reward, equation_reward_func, length_penalty_func
 
 DATASET_PATH = 'OpenAssistant/oasst1'
 
@@ -49,37 +50,24 @@ def prepare_dataset(dataset_path: str):
   dataset_splits = {'train': dataset['train'], 'dev': dataset['validation'], 'test': []}
   return dataset_splits
 
-def prepare_tokenizer(model_args: ModelConfig):
-  """ Load tokenizer """
-  tokenizer = AutoTokenizer.from_pretrained(model_args.model_name_or_path,
-      revision=model_args.model_revision,
-      trust_remote_code=model_args.trust_remote_code,
-  )
-  # if we use peft we need to make sure we use a chat template that is not using special tokens
-  #  as by default embedding layers will not be trainable 
-  if tokenizer.pad_token is None:
-    tokenizer.pad_token = tokenizer.eos_token
-
-  return tokenizer
-
-def run_training(model_args: ModelConfig, training_args: SFTConfig, dataset, tokenizer):
-  """Main training function."""
+def prepare_model_and_tokenizer(model_args: ModelConfig, training_args: SFTConfig):
+  """ Load the model and tokenizer. """
   logger.info(f'Model parameters {model_args}')
-  logger.info(f'Training/evaluation parameters {training_args}')
 
   # define model kwargs
   if model_args.torch_dtype in ['auto', None]:
     torch_datatype = model_args.torch_dtype 
   else:
-    getattr(torch, model_args.torch_dtype)
+    torch_datatype = getattr(torch, model_args.torch_dtype)
 
   model_kwargs = dict(
-      revision=model_args.model_revision, # What revision from Huggingface to use, defaults to main
+      revision="main",  # Hardcoded default
       trust_remote_code=True,
-      attn_implementation=model_args.attn_implementation, # What attention implementation to use, defaults to flash_attention_2
-      torch_dtype=torch_datatype, # What torch dtype to use, defaults to auto
-      use_cache=False if training_args.gradient_checkpointing else True, # Whether
-      low_cpu_mem_usage=False if torch.cuda.is_available() else True,  # Reduces memory usage on CPU for loading the model
+      attn_implementation=model_args.attn_implementation, 
+      torch_dtype=torch_datatype, 
+      device_map="auto",  # Hardcoded default
+      use_cache=False if training_args.gradient_checkpointing else True,
+      low_cpu_mem_usage=False if torch.cuda.is_available() else True,
   )
   
   # Check which training method to use and if 4-bit quantization is needed
@@ -96,9 +84,27 @@ def run_training(model_args: ModelConfig, training_args: SFTConfig, dataset, tok
   model_name = model_args.model_name_or_path
   # model = AutoLigerKernelForCausalLM.from_pretrained(model_name, **model_kwargs)
   model = AutoModelForCausalLM.from_pretrained(model_name, **model_kwargs)
-  training_args.distributed_state.wait_for_everyone()  # wait for all processes to load
 
+  if hasattr(model, 'print_trainable_parameters'):
+    model.print_trainable_parameters()
+
+  tokenizer = AutoTokenizer.from_pretrained(model_name, trust_remote_code=True)
+  # Make sure not to include any special tokens in vocab, since the embedding layers are not trainable with PEFT
+  if tokenizer.pad_token is None:
+    tokenizer.pad_token = tokenizer.eos_token
+
+  return model, tokenizer
+
+def run_training(model, model_args, training_args, dataset, tokenizer):
+  """Main training function."""
+  logger.info(f'Training/evaluation parameters {training_args}')
+
+  training_args.distributed_state.wait_for_everyone()  # wait for all processes to load
   peft_config = get_peft_config(model_args)
+  # alternate way to define peft config
+  # peft_config = LoraConfig(task_type="CAUSAL_LM", r=8, lora_alpha=32, lora_dropout=0.1,
+  #                         target_modules=["q_proj", "v_proj"])
+  print(peft_config)
 
   # Initialize the Trainer
   trainer = SFTTrainer(model=model, args=training_args, train_dataset=dataset['train'],
@@ -120,7 +126,7 @@ def run_training(model_args: ModelConfig, training_args: SFTConfig, dataset, tok
   train_result = trainer.train(resume_from_checkpoint=last_checkpoint)
 
   metrics = train_result.metrics
-  metrics['train_samples'] = len(train_dataset)
+  metrics['num_train_samples'] = len(dataset['train'])
   trainer.log_metrics('train', metrics)
   trainer.save_metrics('train', metrics)
   trainer.save_state()
@@ -177,14 +183,52 @@ def run_evaluation(model_args: ModelConfig, training_args: SFTConfig, dataset, t
       predictions = eval_trainer.predict(dataset['test'])
       logger.info(f"Test results: {predictions.metrics}")
 
+def args_to_configs(args, device_info):
+  """Convert our unified args to ModelConfig and SFTConfig for TRL compatibility."""
+  
+  # Get the appropriate model name
+  model_name = get_model_name(args, device_info)
+  
+  # Create ModelConfig
+  model_args = ModelConfig(
+    model_name_or_path=model_name,
+    tokenizer_name_or_path=args.tokenizer_name or model_name,
+    attn_implementation=args.attn_implementation,
+    torch_dtype="auto",  # Let TRL handle this
+    use_peft=args.use_peft,
+    load_in_4bit=args.load_in_4bit,
+    lora_r=args.lora_r,
+    lora_alpha=args.lora_alpha,
+  )
+  
+  # Create SFTConfig  
+  training_args = SFTConfig(
+    output_dir=args.output_dir,
+    num_train_epochs=args.num_train_epochs,
+    per_device_train_batch_size=args.per_device_train_batch_size,
+    gradient_accumulation_steps=args.gradient_accumulation_steps,
+    learning_rate=args.learning_rate,
+    lr_scheduler_type=args.lr_scheduler_type,
+    warmup_ratio=args.warmup_ratio,
+    logging_steps=args.logging_steps,
+    save_strategy="epoch",  # Hardcoded default
+    seed=args.seed,
+    max_seq_length=args.max_seq_length,
+    dataset_text_field="text",  # Hardcoded default
+    packing=True,  # Hardcoded default
+  )
+  
+  return model_args, training_args
+
 
 if __name__ == '__main__':
-  parser = TrlParser((ModelConfig, SFTConfig))
-  model_args, training_args = parser.parse_args_and_config()
+  args = parse_arguments()
+  device_info = get_device_info()
+  model_args, training_args = args_to_configs(args, device_info)
   set_seed(training_args.seed)
 
   dataset_splits = prepare_dataset(DATASET_PATH)
-  tokenizer = prepare_tokenizer(model_args)
+  model, tokenizer = prepare_model_and_tokenizer(model_args, training_args)
   
-  run_training(model_args, training_args, dataset_splits, tokenizer)
+  run_training(model, model_args, training_args, dataset_splits, tokenizer)
   run_evaluation(model_args, training_args, dataset_splits, tokenizer)
