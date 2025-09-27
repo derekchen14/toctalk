@@ -67,6 +67,7 @@ def get_model_name(args, device_info):
           raise ValueError(f"Model '{args.model_name}' not found on Hugging Face Hub. Please check the model name.")
       except (requests.RequestException, requests.Timeout):
         raise ValueError(f"Model '{args.model_name}' could not be found in time, please check your internet connection.")
+      return args.model_name
 
     size_to_model = {
         "small": "Qwen/Qwen3-0.6B",
