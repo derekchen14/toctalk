@@ -235,6 +235,8 @@ def args_to_configs(args):
         logging_steps=args.logging_steps,
         save_strategy=args.save_strategy,
         save_steps=args.logging_steps,
+        temperature=args.temperature,
+        top_p=args.top_p,
     )
 
   
