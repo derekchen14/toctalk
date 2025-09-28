@@ -5,7 +5,7 @@ import platform
 import requests
 
 from trl import SFTConfig, GRPOConfig
-from prompts.setup import system_message
+from prompts.setup import system_message, SYSTEM_PROMPT
 from transformers.trainer_utils import get_last_checkpoint
 
 def get_checkpoint(training_args: SFTConfig | GRPOConfig):
@@ -24,6 +24,14 @@ def create_conversation(sample):
   }
   return convo 
 
+def make_conversation(example):
+    return {
+        "prompt": [
+            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "user", "content": example["problem"]},
+        ],
+    }
+
 def save_completion_sample(completion):
   if random.random() < 0.1:  # 1% chance to write samples into a file
     os.makedirs("completion_samples", exist_ok=True)
@@ -37,15 +45,11 @@ def get_device_info():
     if torch.cuda.is_available():
       gpu_name = torch.cuda.get_device_name(0).lower()
       device_info = {"device": "cuda", "device_map": "auto", "torch_dtype": torch.float16, "hardware_type": "nvidia_gpu"}
-      if "a100" in gpu_name:
-        device_info["hardware_type"] = "a100"
             
     # Check for Apple Silicon (M2 and similar)
     elif hasattr(torch.backends, 'mps') and torch.backends.mps.is_available():
       system_info = platform.platform().lower()
       device_info = {"device": "mps", "device_map": None, "torch_dtype": torch.float16, "hardware_type": "apple_silicon"}
-      if "arm64" in system_info:
-        device_info["hardware_type"] = "m_series"
     
     # Check for CPU only
     else:
@@ -53,7 +57,7 @@ def get_device_info():
     
     return device_info
 
-def get_model_name(args, device_info):
+def get_model_name(args):
     """
     Get the appropriate model name based on args and device capabilities.
     If model_name is specified, validate it exists on HF Hub then use it (overrides model_size).

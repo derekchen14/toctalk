@@ -12,13 +12,11 @@ from peft import AutoPeftModelForCausalLM, LoraConfig
 from transformers import AutoModelForCausalLM, AutoTokenizer, set_seed, BitsAndBytesConfig
 # from liger_kernel.transformers import AutoLigerKernelForCausalLM
 
-from trl import SFTTrainer, ModelConfig, SFTConfig, get_peft_config
+from trl import SFTTrainer, ModelConfig, SFTConfig, GRPOTrainer, GRPOConfig
 from datasets import load_dataset
-from utils.helpers import get_checkpoint, create_conversation, get_device_info, get_model_name
+from utils.helpers import get_checkpoint, make_conversation, get_device_info, get_model_name
 from utils.arguments import parse_arguments
-from utils.rewards import reasoning_format_reward, equation_reward_func, length_penalty_func
-
-DATASET_PATH = 'OpenAssistant/oasst1'
+from utils.rewards import reasoning_format_reward, equation_reward_func, length_penalty_func, accuracy_reward
 
 ########################
 # Setup logging
@@ -30,24 +28,21 @@ handler = logging.StreamHandler()
 handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
 logger.addHandler(handler)
 
-def prepare_dataset(dataset_path: str):
+def prepare_dataset(args):
   """Prepare dataset splits for training and evaluation."""
   # train_dataset = load_dataset('json', data_files=script_args.dataset_id_or_path, split='train')
-  # dataset = load_dataset("microsoft/orca-math-word-problems-200k", split="train")
-  dataset = load_dataset(DATASET_PATH)
-  # dev_dataset = load_dataset(DATASET_PATH, split="validation")
+  train_data, test_data = load_dataset(args.dataset_path, split=["train[:5%]", "test"])
   # train_dataset = dataset.map(create_conversation, remove_columns=dataset.features, batched=False)
 
   # --- Can split further if we want ---
   # train_test_split = dataset.train_test_split(test_size=0.1)
   # train_dataset = train_test_split["train"]
-  # test_dataset = train_test_split["test"]
-  print(dataset['train'][345].keys())    
-  train_dataset = dataset.shuffle(seed=42).select(range(10000))
-  logger.info(f'Loaded dataset with {len(train_dataset)} samples and the following features: {train_dataset.features}')
-  # dataset.to_json("train_dataset.json", orient="records")
-
-  dataset_splits = {'train': dataset['train'], 'dev': dataset['validation'], 'test': []}
+  # train_dataset = train_dataset.shuffle(seed=42).select(range(4000))
+  # print(train_data)
+  train_dataset = train_data.map(make_conversation)
+  train_dataset = train_dataset.remove_columns(["messages", "problem"])
+  test_data = test_data.map(make_conversation)
+  dataset_splits = {'train': train_dataset, 'dev': [], 'test': test_data}
   return dataset_splits
 
 def prepare_model_and_tokenizer(model_args: ModelConfig, training_args: SFTConfig):
@@ -64,7 +59,7 @@ def prepare_model_and_tokenizer(model_args: ModelConfig, training_args: SFTConfi
       revision="main",  # Hardcoded default
       trust_remote_code=True,
       attn_implementation=model_args.attn_implementation, 
-      torch_dtype=torch_datatype, 
+      dtype=torch_datatype, 
       device_map="auto",  # Hardcoded default
       use_cache=False if training_args.gradient_checkpointing else True,
       low_cpu_mem_usage=False if torch.cuda.is_available() else True,
@@ -95,25 +90,33 @@ def prepare_model_and_tokenizer(model_args: ModelConfig, training_args: SFTConfi
 
   return model, tokenizer
 
-def run_training(model, model_args, training_args, dataset, tokenizer):
+def run_training(args, model, model_args, training_args, dataset, tokenizer):
   """Main training function."""
-  logger.info(f'Training/evaluation parameters {training_args}')
+  # logger.info(f'Training/evaluation parameters {training_args}')
 
   training_args.distributed_state.wait_for_everyone()  # wait for all processes to load
-  peft_config = get_peft_config(model_args)
-  # alternate way to define peft config
-  # peft_config = LoraConfig(task_type="CAUSAL_LM", r=8, lora_alpha=32, lora_dropout=0.1,
-  #                         target_modules=["q_proj", "v_proj"])
-  print(peft_config)
+  # Parse target modules (handle comma-separated values)
+  if args.lora_target_modules == "all-linear":
+    target_modules = "all-linear"
+  else:
+    target_modules = [module.strip() for module in args.lora_target_modules.split(",")]
+  
+  peft_config = LoraConfig(task_type="CAUSAL_LM", 
+                           r=args.lora_r, lora_alpha=args.lora_alpha, lora_dropout=0.1,
+                          target_modules=target_modules)
 
   # Initialize the Trainer
-  trainer = SFTTrainer(model=model, args=training_args, train_dataset=dataset['train'],
-      tokenizer=tokenizer, peft_config=peft_config
-  )
-  # trainer = GRPOTrainer(model=model_name, reward_funcs=[format_reward_func, equation_reward_func],
-  #     args=training_args, train_dataset=dataset['train'], eval_dataset=dataset['dev'], peft_config=peft_config
-  # )
+  if args.method == "sft":
+    trainer = SFTTrainer(model=model, args=training_args, train_dataset=dataset['train'],
+        tokenizer=tokenizer, peft_config=peft_config
+    )
+  elif args.method == "grpo":
+    trainer = GRPOTrainer(model=model, reward_funcs=[reasoning_format_reward, accuracy_reward],
+        args=training_args, train_dataset=dataset['train'], peft_config=peft_config
+    )
 
+  # set the device map for the model
+  model = model.to(training_args.device)
   if trainer.accelerator.is_main_process and peft_config:
     trainer.model.print_trainable_parameters()
 
@@ -125,7 +128,7 @@ def run_training(model, model_args, training_args, dataset, tokenizer):
   logger.info(f'*** Starting training {datetime.now().strftime("%Y-%m-%d %H:%M:%S")} for {training_args.num_train_epochs} epochs***')
   train_result = trainer.train(resume_from_checkpoint=last_checkpoint)
 
-  metrics = train_result.metrics
+  metrics = train_result.metricsf
   metrics['num_train_samples'] = len(dataset['train'])
   trainer.log_metrics('train', metrics)
   trainer.save_metrics('train', metrics)
@@ -183,52 +186,68 @@ def run_evaluation(model_args: ModelConfig, training_args: SFTConfig, dataset, t
       predictions = eval_trainer.predict(dataset['test'])
       logger.info(f"Test results: {predictions.metrics}")
 
-def args_to_configs(args, device_info):
-  """Convert our unified args to ModelConfig and SFTConfig for TRL compatibility."""
-  
-  # Get the appropriate model name
-  model_name = get_model_name(args, device_info)
-  
-  # Create ModelConfig
+def args_to_configs(args):
+  """Convert our unified args to ModelConfig and SFTConfig for TRL compatibility.""" 
+  device_info = get_device_info()
+
+  model_name = get_model_name(args)
+  attention_implementation = "eager" if device_info['hardware_type'] == "apple_silicon" else "flash_attention_2"
+
+  print(f"device_info: {device_info}")
   model_args = ModelConfig(
     model_name_or_path=model_name,
-    tokenizer_name_or_path=args.tokenizer_name or model_name,
-    attn_implementation=args.attn_implementation,
+    attn_implementation=attention_implementation,
     torch_dtype="auto",  # Let TRL handle this
-    use_peft=args.use_peft,
+    use_peft=True,
     load_in_4bit=args.load_in_4bit,
     lora_r=args.lora_r,
     lora_alpha=args.lora_alpha,
+    lora_target_modules=args.lora_target_modules,
   )
   
-  # Create SFTConfig  
-  training_args = SFTConfig(
-    output_dir=args.output_dir,
-    num_train_epochs=args.num_train_epochs,
-    per_device_train_batch_size=args.per_device_train_batch_size,
-    gradient_accumulation_steps=args.gradient_accumulation_steps,
-    learning_rate=args.learning_rate,
-    lr_scheduler_type=args.lr_scheduler_type,
-    warmup_ratio=args.warmup_ratio,
-    logging_steps=args.logging_steps,
-    save_strategy="epoch",  # Hardcoded default
-    seed=args.seed,
-    max_seq_length=args.max_seq_length,
-    dataset_text_field="text",  # Hardcoded default
-    packing=True,  # Hardcoded default
-  )
+  if args.method == "sft":
+    training_args = SFTConfig(
+      output_dir=args.output_dir,
+      num_train_epochs=args.num_train_epochs,
+      per_device_train_batch_size=args.per_device_train_batch_size,
+      gradient_accumulation_steps=args.grad_accum_steps,
+      learning_rate=args.learning_rate,
+      lr_scheduler_type=args.lr_scheduler_type,
+      warmup_ratio=args.warmup_ratio,
+      logging_steps=args.logging_steps,
+      save_strategy=args.save_strategy,
+      seed=args.seed,
+      dataset_text_field="text",  # Hardcoded default
+      packing=True,  # Hardcoded default
+    )
+
+  elif args.method == "grpo":
+    training_args = GRPOConfig(
+        output_dir=args.output_dir,
+        learning_rate=args.learning_rate,
+        remove_unused_columns=False,  # to access the solution column in accuracy_reward
+        gradient_accumulation_steps=args.grad_accum_steps,
+        num_train_epochs=args.num_train_epochs,
+        report_to=[], bf16=True, push_to_hub=False,  # Disable tensorboard
+        max_completion_length=args.max_completion_length,
+        num_generations=args.num_generations,
+        max_prompt_length=args.max_prompt_length,
+        logging_steps=args.logging_steps,
+        save_strategy=args.save_strategy,
+        save_steps=args.logging_steps,
+    )
+
   
   return model_args, training_args
 
 
 if __name__ == '__main__':
   args = parse_arguments()
-  device_info = get_device_info()
-  model_args, training_args = args_to_configs(args, device_info)
+  model_args, training_args = args_to_configs(args)
   set_seed(training_args.seed)
 
-  dataset_splits = prepare_dataset(DATASET_PATH)
+  dataset_splits = prepare_dataset(args)
   model, tokenizer = prepare_model_and_tokenizer(model_args, training_args)
   
-  run_training(model, model_args, training_args, dataset_splits, tokenizer)
+  run_training(args, model, model_args, training_args, dataset_splits, tokenizer)
   run_evaluation(model_args, training_args, dataset_splits, tokenizer)

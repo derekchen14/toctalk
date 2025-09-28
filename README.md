@@ -10,7 +10,9 @@ python3 -m venv venv
 source venv/bin/activate
 
 # Install dependencies
-pip install -r requirements.txt
+uv pip install -r requirements.txt
+uv pip install psutil
+uv pip install flash_attn --no-build-isolation
 
 # Add your Anthropic API key
 echo "ANTHROPIC_API_KEY=your-key-here" > .env
