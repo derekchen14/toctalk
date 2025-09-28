@@ -17,7 +17,7 @@ def get_personality_prompt():
 def load_model(args, device_info):
     """Load the specified model with optimal device configuration."""
     # Get the appropriate model name based on args and device
-    model_name = get_model_name(args, device_info)
+    model_name = get_model_name(args)
     
     if args.verbose:
         print(f"Loading model: {model_name}")
@@ -128,8 +128,7 @@ def main():
         print(f"Using device: {device_info['device']}")
     
     # Load model
-    # Get model name for display
-    model_name = get_model_name(args, device_info)
+    model_name = get_model_name(args)
     print(f"Loading model '{model_name}'... This may take a moment.")
     model, tokenizer, device = load_model(args, device_info)
     print("Model loaded successfully!")

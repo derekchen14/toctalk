@@ -45,43 +45,37 @@ def prepare_dataset(args):
   dataset_splits = {'train': train_dataset, 'dev': [], 'test': test_data}
   return dataset_splits
 
-def prepare_model_and_tokenizer(model_args: ModelConfig, training_args: SFTConfig):
+def prepare_model_and_tokenizer(args):
   """ Load the model and tokenizer. """
-  logger.info(f'Model parameters {model_args}')
+  device_info = get_device_info()
+  model_name = get_model_name(args)
+  print(f"device_info: {device_info}, model_name: {args.model_name}")
 
-  # define model kwargs
-  if model_args.torch_dtype in ['auto', None]:
-    torch_datatype = model_args.torch_dtype 
+  if device_info['hardware_type'] == 'nvidia_gpu':
+    attention_implementation = 'flash_attention_2'
+    torch_datatype = torch.bfloat16
   else:
-    torch_datatype = getattr(torch, model_args.torch_dtype)
-
-  model_kwargs = dict(
-      revision="main",  # Hardcoded default
-      trust_remote_code=True,
-      attn_implementation=model_args.attn_implementation, 
-      dtype=torch_datatype, 
-      device_map="auto",  # Hardcoded default
-      use_cache=False if training_args.gradient_checkpointing else True,
-      low_cpu_mem_usage=False if torch.cuda.is_available() else True,
+    attention_implementation = 'eager'
+    torch_datatype = 'auto'
+  
+  model_kwargs['quantization_config'] = BitsAndBytesConfig(
+      load_in_4bit=True,
+      bnb_4bit_use_double_quant=True,
+      bnb_4bit_quant_type='nf4',
+      bnb_4bit_compute_dtype=model_kwargs['torch_dtype'],
+      bnb_4bit_quant_storage=model_kwargs['torch_dtype'],
   )
   
-  # Check which training method to use and if 4-bit quantization is needed
-  if model_args.load_in_4bit: 
-    model_kwargs['quantization_config'] = BitsAndBytesConfig(
-        load_in_4bit=True,
-        bnb_4bit_use_double_quant=True,
-        bnb_4bit_quant_type='nf4',
-        bnb_4bit_compute_dtype=model_kwargs['torch_dtype'],
-        bnb_4bit_quant_storage=model_kwargs['torch_dtype'],
-    )
-  
-  # load the model with our kwargs
-  model_name = model_args.model_name_or_path
   # model = AutoLigerKernelForCausalLM.from_pretrained(model_name, **model_kwargs)
-  model = AutoModelForCausalLM.from_pretrained(model_name, **model_kwargs)
-
-  if hasattr(model, 'print_trainable_parameters'):
-    model.print_trainable_parameters()
+  model = AutoModelForCausalLM.from_pretrained(model_name,
+    attn_implementation=attention_implementation,
+    dtype=torch_datatype,
+    device_map="auto",        # Hardcoded default
+    use_cache=False,          # Needs to be turned off for training
+    low_cpu_mem_usage=True,   # Should be True for both Apple Silicon and NVIDIA GPU
+  )
+  # if the model does not have this method, it will raise an error, which is a good warning
+  model.print_trainable_parameters()
 
   tokenizer = AutoTokenizer.from_pretrained(model_name, trust_remote_code=True)
   # Make sure not to include any special tokens in vocab, since the embedding layers are not trainable with PEFT
@@ -161,7 +155,7 @@ def run_evaluation(model_args: ModelConfig, training_args: SFTConfig, dataset, t
   model = AutoPeftModelForCausalLM.from_pretrained(
       training_args.output_dir,
       device_map="auto",
-      torch_dtype=torch.float16,
+      torch_dtype=torch.bfloat16,
   )
   model.config.use_cache = True  # Enable KV cache for faster inference
 
@@ -188,12 +182,9 @@ def run_evaluation(model_args: ModelConfig, training_args: SFTConfig, dataset, t
 
 def args_to_configs(args):
   """Convert our unified args to ModelConfig and SFTConfig for TRL compatibility.""" 
-  device_info = get_device_info()
+  logger.info(args)
+  
 
-  model_name = get_model_name(args)
-  attention_implementation = "eager" if device_info['hardware_type'] == "apple_silicon" else "flash_attention_2"
-
-  print(f"device_info: {device_info}")
   model_args = ModelConfig(
     model_name_or_path=model_name,
     attn_implementation=attention_implementation,
