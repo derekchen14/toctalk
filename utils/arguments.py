@@ -8,9 +8,10 @@ def parse_arguments():
   model_group.add_argument("--model_name", type=str, default=None, help="Model name or path using Huggingface Hub")
   model_group.add_argument("--model_size", type=str, default="small", choices=["small", "medium", "large"],
                            help="Model size, which will be overridden by model_name if provided")
-  model_group.add_argument("--use_liger", action="store_true", help="Use Liger optimizations") 
+  model_group.add_argument("--allow_download", action="store_true", help="Allow downloading models from Huggingface Hub")
+  model_group.add_argument("--use_checkpoint", action="store_true", help="Use previous checkpoint for training")
  
-  # Dataset arguments  
+  # Dataset arguments
   dataset_group = parser.add_argument_group('dataset', 'Dataset and generation arguments')
   dataset_group.add_argument("--dataset_path", type=str, default=None, help="Dataset path")
   dataset_group.add_argument("--max_completion_length", type=int, default=256, help="Maximum sequence length")

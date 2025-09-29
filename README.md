@@ -32,8 +32,10 @@ Open http://localhost:8000 in your browser to start chatting.
 ### Model Training
 
 ```bash
-# Train the model
-!python training.py --config receipes/sft_args.yaml
+# Train the first time model
+python training.py --allow_download
+# All future calls, especially for running multiple trials as once
+python training.py --use_checkpoint
 ```
 
 ## Project Structure

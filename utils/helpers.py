@@ -44,16 +44,19 @@ def get_device_info():
     # Check for NVIDIA GPU (A100 or similar)
     if torch.cuda.is_available():
       gpu_name = torch.cuda.get_device_name(0).lower()
-      device_info = {"device": "cuda", "device_map": "auto", "torch_dtype": torch.float16, "hardware_type": "nvidia_gpu"}
+      device_info = {"device": "cuda", "device_map": "auto", "torch_dtype": torch.float16,
+                "hardware_type": "nvidia_gpu", "pin_memory": True}
             
     # Check for Apple Silicon (M2 and similar)
     elif hasattr(torch.backends, 'mps') and torch.backends.mps.is_available():
       system_info = platform.platform().lower()
-      device_info = {"device": "mps", "device_map": None, "torch_dtype": torch.float16, "hardware_type": "apple_silicon"}
+      device_info = {"device": "mps", "device_map": None, "torch_dtype": torch.float16,
+                "hardware_type": "apple_silicon", "pin_memory": False}
     
     # Check for CPU only
     else:
-      device_info = {"device": "cpu", "device_map": None, "torch_dtype": torch.float32, "hardware_type": "unknown"}
+      device_info = {"device": "cpu", "device_map": None, "torch_dtype": torch.float32,
+                "hardware_type": "unknown", "pin_memory": False}
     
     return device_info
 
