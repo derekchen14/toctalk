@@ -7,6 +7,9 @@ from .session_storage import SessionStorage
 class ChatManager:
     def __init__(self, storage: Optional[SessionStorage] = None, llm_client: Optional[ClaudeLLMClient] = None):
         self.storage = storage or SessionStorage()
+        # NOTE: Default LLM client uses claude-sonnet-4-20250514 (Claude Sonnet 4)
+        # DO NOT change to "claude-3-5-sonnet" variants - they don't exist!
+        # See llm_client.py for full model documentation
         self.llm_client = llm_client or ClaudeLLMClient()
         self.current_session: Optional[ChatSession] = None
 

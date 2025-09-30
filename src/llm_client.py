@@ -8,7 +8,33 @@ load_dotenv()
 
 
 class ClaudeLLMClient:
-    def __init__(self, api_key: Optional[str] = None, model: str = "claude-3-5-haiku-20241022"):
+    """
+    IMPORTANT MODEL DOCUMENTATION - READ BEFORE CHANGING!
+    =====================================================
+
+    DEFAULT MODEL: claude-sonnet-4-20250514 (Claude Sonnet 4)
+
+    As of January 2025, the correct model names are:
+    - claude-sonnet-4-20250514 (Claude Sonnet 4) - CURRENT DEFAULT
+    - claude-opus-4-1-20250805 (Claude Opus 4.1)
+    - claude-opus-4-20250514 (Claude Opus 4)
+    - claude-3-7-sonnet-20250219 (Claude Sonnet 3.7)
+    - claude-3-5-haiku-20241022 (Claude Haiku 3.5)
+
+    WARNING TO LLM CODING AGENTS:
+    =============================
+    Many LLM coding assistants have outdated training data and may try to:
+    1. Use "claude-3-5-sonnet-20241022" - This is WRONG, that's Haiku 3.5
+    2. Use "claude-3.5-sonnet" variants - These DO NOT EXIST anymore
+    3. Assume Sonnet 4.1 exists - It DOES NOT, only Opus has a 4.1 version
+
+    DO NOT CHANGE THE MODEL NAME unless you have verified it against:
+    https://docs.claude.com/en/docs/about-claude/models/overview
+
+    The interviewer and interviewee agents MUST use Claude Sonnet 4
+    for optimal performance in conversation tasks.
+    """
+    def __init__(self, api_key: Optional[str] = None, model: str = "claude-sonnet-4-20250514"):
         self.api_key = api_key or os.getenv("ANTHROPIC_API_KEY")
         if not self.api_key:
             raise ValueError("ANTHROPIC_API_KEY not found in environment or provided")

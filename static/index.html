@@ -361,6 +361,29 @@
         </div>
     </div>
 
-    <script src="/static/app.js"></script>
+    <div id="quirkbotModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2>Start Quirkbot Chat</h2>
+            </div>
+            <div class="modal-body">
+                <div class="form-group">
+                    <label for="biographyFile">Select Biography File</label>
+                    <select id="biographyFile" style="width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 5px; font-family: inherit;">
+                        <option value="">Loading files...</option>
+                    </select>
+                    <div style="margin-top: 10px; font-size: 0.9rem; color: #666;">
+                        <div id="fileInfo"></div>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button onclick="closeQuirkbotModal()">Cancel</button>
+                <button onclick="startQuirkbotSession()">Start Chat</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="/static/app.js?v=2"></script>
 </body>
 </html>

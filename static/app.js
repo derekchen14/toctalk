@@ -10,6 +10,7 @@ const quirkbotBtn = document.getElementById('quirkbotBtn');
 const sessionInfo = document.getElementById('sessionInfo');
 const sessionsList = document.getElementById('sessionsList');
 const loading = document.getElementById('loading');
+let biographyFiles = [];
 
 function formatDate(dateString) {
     const date = new Date(dateString);
@@ -319,11 +320,103 @@ async function createNewSession(autoCreate = false) {
     }
 }
 
-async function createQuirkbotSession() {
+async function loadBiographyFiles() {
+    try {
+        const response = await fetch('/api/biography-files');
+        if (!response.ok) {
+            throw new Error('Failed to load biography files');
+        }
+
+        biographyFiles = await response.json();
+
+        const select = document.getElementById('biographyFile');
+        select.innerHTML = '';
+
+        if (biographyFiles.length === 0) {
+            select.innerHTML = '<option value="">No biography files found</option>';
+            return;
+        }
+
+        // Group files by directory
+        const benchmarkFiles = biographyFiles.filter(f => f.directory === 'benchmarks');
+        const biographyDirFiles = biographyFiles.filter(f => f.directory === 'biographies');
+
+        if (benchmarkFiles.length > 0) {
+            const optgroup = document.createElement('optgroup');
+            optgroup.label = 'Benchmarks';
+            benchmarkFiles.forEach(file => {
+                const option = document.createElement('option');
+                option.value = file.path;
+                option.textContent = file.filename;
+                optgroup.appendChild(option);
+            });
+            select.appendChild(optgroup);
+        }
+
+        if (biographyDirFiles.length > 0) {
+            const optgroup = document.createElement('optgroup');
+            optgroup.label = 'Biographies';
+            biographyDirFiles.forEach(file => {
+                const option = document.createElement('option');
+                option.value = file.path;
+                option.textContent = file.filename;
+                optgroup.appendChild(option);
+            });
+            select.appendChild(optgroup);
+        }
+
+        // Select first file by default
+        if (biographyFiles.length > 0) {
+            select.value = biographyFiles[0].path;
+            updateFileInfo();
+        }
+
+    } catch (error) {
+        console.error('Error loading biography files:', error);
+        const select = document.getElementById('biographyFile');
+        select.innerHTML = '<option value="">Error loading files</option>';
+    }
+}
+
+function updateFileInfo() {
+    const select = document.getElementById('biographyFile');
+    const fileInfo = document.getElementById('fileInfo');
+
+    if (select.value) {
+        const file = biographyFiles.find(f => f.path === select.value);
+        if (file) {
+            fileInfo.innerHTML = `<strong>Directory:</strong> ${file.directory}<br><strong>Path:</strong> ${file.path}`;
+        }
+    } else {
+        fileInfo.innerHTML = '';
+    }
+}
+
+function showQuirkbotModal() {
+    const modal = document.getElementById('quirkbotModal');
+    modal.classList.add('active');
+    loadBiographyFiles();
+}
+
+function closeQuirkbotModal() {
+    const modal = document.getElementById('quirkbotModal');
+    modal.classList.remove('active');
+}
+
+async function startQuirkbotSession() {
+    const select = document.getElementById('biographyFile');
+    const biographyFile = select.value;
+
+    if (!biographyFile) {
+        showError('Please select a biography file');
+        return;
+    }
+
     try {
         const response = await fetch('/api/quirkbot/random', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' }
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ biography_file: biographyFile })
         });
 
         if (!response.ok) {
@@ -332,10 +425,12 @@ async function createQuirkbotSession() {
 
         const data = await response.json();
 
+        closeQuirkbotModal();
         currentSessionId = data.session_id;
 
         // Load the full session to get all metadata
         await loadSession(currentSessionId);
+        await loadSessions(); // Refresh sessions list
 
     } catch (error) {
         console.error('Error creating quirkbot session:', error);
@@ -344,8 +439,13 @@ async function createQuirkbotSession() {
 }
 
 newSessionBtn.onclick = showModal;
-quirkbotBtn.onclick = createQuirkbotSession;
+quirkbotBtn.onclick = showQuirkbotModal;
 sendBtn.onclick = sendMessage;
+
+// Add event listener for biography file selection
+if (document.getElementById('biographyFile')) {
+    document.getElementById('biographyFile').onchange = updateFileInfo;
+}
 
 messageInput.addEventListener('keydown', (e) => {
     if (e.key === 'Enter' && !e.shiftKey) {

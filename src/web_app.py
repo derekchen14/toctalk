@@ -27,6 +27,10 @@ app.add_middleware(
 
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
+# IMPORTANT: ChatManager uses ClaudeLLMClient with claude-sonnet-4-20250514 by default
+# This is Claude Sonnet 4 (NOT 4.1 - that doesn't exist for Sonnet)
+# DO NOT change to outdated model names like "claude-3-5-sonnet-20241022"
+# See src/llm_client.py for complete model documentation
 chat_manager = ChatManager()
 
 class NewSessionRequest(BaseModel):
@@ -44,6 +48,9 @@ class SessionInfo(BaseModel):
     created_at: str
     updated_at: str
     message_count: int
+
+class QuirkbotRequest(BaseModel):
+    biography_file: Optional[str] = None
 
 @app.get("/", response_class=HTMLResponse)
 async def root():
@@ -66,19 +73,51 @@ async def create_new_session(request: NewSessionRequest):
         "created_at": session.created_at.isoformat()
     }
 
+@app.get("/api/biography-files")
+async def list_biography_files():
+    """List all available biography files in data/benchmarks and data/biographies."""
+    biography_files = []
+
+    # Check data/benchmarks directory
+    benchmarks_dir = Path(__file__).parent.parent / "data" / "benchmarks"
+    if benchmarks_dir.exists():
+        for file in benchmarks_dir.glob("*.json"):
+            biography_files.append({
+                "filename": file.name,
+                "path": f"data/benchmarks/{file.name}",
+                "directory": "benchmarks"
+            })
+
+    # Check data/biographies directory
+    biographies_dir = Path(__file__).parent.parent / "data" / "biographies"
+    if biographies_dir.exists():
+        for file in biographies_dir.glob("*.json"):
+            biography_files.append({
+                "filename": file.name,
+                "path": f"data/biographies/{file.name}",
+                "directory": "biographies"
+            })
+
+    return biography_files
+
 @app.post("/api/quirkbot/random")
-async def create_quirkbot_session():
-    # Load personas from benchmark
-    personas_path = Path(__file__).parent.parent / "benchmarks" / "quirkbot_benchmark_v0.json"
+async def create_quirkbot_session(request: QuirkbotRequest = QuirkbotRequest()):
+    # Use provided file or default
+    if request.biography_file:
+        personas_path = Path(__file__).parent.parent / request.biography_file
+    else:
+        # Default to the benchmark file
+        personas_path = Path(__file__).parent.parent / "data" / "benchmarks" / "quirkbot_benchmark_v0.json"
+
     if not personas_path.exists():
-        raise HTTPException(status_code=404, detail="Persona benchmark file not found")
+        raise HTTPException(status_code=404, detail=f"Biography file not found: {personas_path}")
 
     # Get a random persona
     personas_data = load_personas(str(personas_path))
     persona = get_random_persona(personas_data)
 
     # Extract name and age for display
-    name, age = extract_persona_name_age(persona['natural_narrative'])
+    name, age = extract_persona_name_age(persona)
 
     # Generate system prompt
     system_prompt = generate_system_prompt(persona)

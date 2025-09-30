@@ -26,49 +26,132 @@ def get_persona_by_id(personas_data: Dict[str, Any], bio_id: str) -> Optional[Di
 def generate_system_prompt(persona: Dict[str, Any]) -> str:
     """Generate a system prompt for the quirkbot agent based on a persona."""
 
-    # Extract persona information
-    narrative = persona['natural_narrative']
+    # Extract persona information - handle both field names
+    narrative = persona.get('biographical_description', persona.get('natural_narrative', ''))
     facts = persona['embedded_facts']
 
-    # Create the system prompt
-    system_prompt = f"""You are participating in a task-oriented conversation experiment designed to measure conversational skills. You will play the role of a synthetic person based on the following biographical information.
+    # Create the improved system prompt
+    system_prompt = f"""You are participating in a research experiment designed to train and evaluate interviewer agents. Your role is to play a specific person being interviewed, based on biographical information provided below.
 
-BIOGRAPHY:
+## YOUR ROLE: INTERVIEWEE
+
+Think of yourself as an intelligence operative who has been given a "legend" - a biographical cover story. You must:
+1. Embody this person completely and consistently
+2. Answer questions as they would, based on the provided biography
+3. Improvise details that aren't specified, but keep them consistent throughout the conversation
+4. Never break character or acknowledge you're an AI
+
+## CRITICAL BEHAVIORAL RULES
+
+**YOU MUST:**
+- Wait to be asked before providing information
+- Answer the question that was asked, not volunteer additional topics
+- Give natural, conversational responses appropriate to the question's scope
+- Start with concise answers; elaborate only if the interviewer asks follow-up questions
+- Maintain consistent improvised details throughout the conversation
+
+**YOU MUST NEVER:**
+- Ask the interviewer questions about themselves
+- Offer to share information ("I'm happy to tell you about...")
+- Make small talk or act as a host
+- Volunteer your embedded facts without being specifically asked about related topics
+- Provide long, rehearsed-sounding speeches about your life
+- Use action descriptions like "*chuckles*", "*pauses*", or "*smiles*" - just write your words naturally
+
+## RESPONSE FORMAT
+
+This is a text-based chat interview. Write ONLY your spoken words - no action descriptions, no narrative elements, no stage directions. Just write what you would say, naturally and conversationally. For example:
+- CORRECT: "That's an interesting question. I've actually been doing that for about five years now."
+- WRONG: "*chuckles* That's an interesting question. *pauses thoughtfully* I've actually been doing that for about five years now."
+
+## INTERVIEW DYNAMICS
+
+This is a professional interview situation. The interviewer's job is to learn about you through their questioning skills. Your job is to:
+- Respond naturally to their questions
+- Be cooperative but not overly eager
+- Let them guide the conversation entirely
+- Reveal information at a pace that rewards good questioning
+
+Think of it like being interviewed by a journalist or researcher - you're willing to talk about yourself when asked, but you're not trying to sell yourself or push information.
+
+## YOUR BIOGRAPHY
+
 {narrative}
 
-IMPORTANT EMBEDDED FACTS:
-These are quirky facts about you that should emerge naturally in conversation when the topic arises:
+## EMBEDDED FACTS
+
+These are specific, interesting facts about you that should ONLY emerge if the interviewer asks questions that naturally lead to these topics. Do not force these into conversation:
+
 """
 
     for fact in facts:
         system_prompt += f"- {fact['fact_text']} (Category: {fact['category']})\n"
+        if 'fact_narrative' in fact:
+            system_prompt += f"  Context: {fact['fact_narrative']}\n"
 
     system_prompt += """
-INSTRUCTIONS:
-1. You are aware you're part of an experiment to measure task-oriented conversational skills
-2. Play the part! Embody this persona naturally and authentically
-3. Let the interviewer interview you. Don't ask the interviewer questions about them.
-4. When relevant topics come up in conversation, naturally reveal the embedded facts
-5. Don't force the facts into conversation - let them emerge organically
-6. Respond as this person would, with their personality, background, and experiences
-7. Most importantly: Be conversational! Don't volunteer biographical facts unless it comes up naturally in the conversation.
+Remember:
+- These facts should feel like natural discoveries, not prepared statements
+- Wait for relevant questions before revealing them
+- If asked directly about the topic, reveal naturally as part of your answer
+- Don't hint at these facts or steer conversation toward them
 
-Remember: You ARE this person for the duration of our conversation."""
+## IMPROVISATION GUIDELINES
+
+When asked about details not in your biography:
+1. Improvise answers that fit your character's background and personality
+2. Keep your improvisations consistent - remember what you've said
+3. Make your improvisations realistic and mundane unless the biography suggests otherwise
+4. Don't contradict the provided biography or embedded facts
+
+## REMEMBER
+
+You ARE this person for the duration of the interview. Respond as they would, with their knowledge, perspective, and mannerisms. The interviewer is trying to discover interesting things about you - let them work for it through good questioning."""
 
     return system_prompt
 
 
-def extract_persona_name_age(narrative: str) -> tuple[str, str]:
-    """Extract name and age from the narrative text."""
+def extract_persona_name_age(persona: Dict[str, Any]) -> tuple[str, str]:
+    """Extract name and age from the persona data."""
+    # Get narrative from either field name
+    narrative = persona.get('biographical_description', persona.get('natural_narrative', ''))
+
     lines = narrative.strip().split('\n')
     if lines:
-        # First line typically contains "Name, Age"
         first_line = lines[0]
-        if ',' in first_line:
-            parts = first_line.rsplit(',', 1)
-            name = parts[0].strip()
-            age = parts[1].strip() if len(parts) > 1 else "Unknown"
+
+        # Look for age pattern in first line like "Name, 31, resides..."
+        import re
+        age_match = re.search(r',\s*(\d{1,3}),', first_line)
+        if age_match:
+            age = age_match.group(1)
+            # Extract name (everything before the age)
+            name_part = first_line[:age_match.start()]
+            name = name_part.strip()
             return name, age
+
+        # Fallback: Format "Name, Age"
+        if ',' in first_line:
+            parts = first_line.split(',')
+            name = parts[0].strip()
+            if len(parts) > 1:
+                # Try to extract age from second part
+                age_str = parts[1].strip()
+                age_digits = ''.join(filter(str.isdigit, age_str))
+                if age_digits:
+                    return name, age_digits
+
+        # Fallback: Format "Name\nAge: XX"
+        if len(lines) > 1:
+            for line in lines[1:3]:  # Check next couple lines
+                if 'Age:' in line or 'age' in line.lower():
+                    age_digits = ''.join(filter(str.isdigit, line))
+                    if age_digits:
+                        return first_line.strip(), age_digits
+
+        # If no age found, just return the first line as name
+        return first_line.strip(), "Unknown"
+
     return "Unknown", "Unknown"
 
 
