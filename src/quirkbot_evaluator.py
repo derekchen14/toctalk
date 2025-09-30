@@ -238,8 +238,8 @@ def evaluate_session(session_path: str, verbose: bool = True) -> Dict:
             elif role == 'user':
                 interviewer_tokens += tokens
 
-    # Initialize LLM client for evaluation
-    llm_client = ClaudeLLMClient()
+    # Initialize LLM client for evaluation (using Haiku for cost efficiency)
+    llm_client = ClaudeLLMClient(model="claude-3-5-haiku-20241022")
 
     # Evaluate each embedded fact
     results = {
