@@ -138,7 +138,8 @@ async def create_quirkbot_session(request: QuirkbotRequest = QuirkbotRequest()):
         "persona_id": persona["bio_id"],
         "persona_name": name,
         "persona_age": age,
-        "system_prompt": system_prompt
+        "system_prompt": system_prompt,
+        "persona_data": persona  # Include full persona object with biographical_description and embedded_facts
     }
 
     chat_manager.storage.save_session(session)

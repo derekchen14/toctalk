@@ -7,7 +7,7 @@ import json
 import re
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
-from note_parser import parse_notes_from_transcript, get_quirky_facts
+from note_parser import parse_notes_from_transcript
 from llm_client import ClaudeLLMClient
 import tiktoken
 
@@ -24,11 +24,17 @@ def extract_embedded_facts(session_data: Dict) -> List[Dict]:
     """
     embedded_facts = []
 
+    # First priority: Check metadata for persona_data with embedded_facts
+    if 'metadata' in session_data and 'persona_data' in session_data['metadata']:
+        persona_data = session_data['metadata']['persona_data']
+        if 'embedded_facts' in persona_data:
+            return persona_data['embedded_facts']
+
     # Check metadata for embedded_facts directly (interviewer sessions)
     if 'metadata' in session_data and 'embedded_facts' in session_data['metadata']:
         return session_data['metadata']['embedded_facts']
 
-    # Check metadata for system_prompt
+    # Check metadata for system_prompt (fallback for older sessions)
     if 'metadata' in session_data and 'system_prompt' in session_data['metadata']:
         system_prompt = session_data['metadata']['system_prompt']
         facts = parse_facts_from_prompt(system_prompt)
@@ -65,14 +71,19 @@ def parse_facts_from_prompt(prompt_text: str) -> List[Dict]:
     """
     facts = []
 
-    # Find the embedded facts section
+    # Find the embedded facts section - support multiple markers
+    facts_section = None
     if 'IMPORTANT EMBEDDED FACTS:' in prompt_text:
-        # Split at the marker and take everything after
         facts_section = prompt_text.split('IMPORTANT EMBEDDED FACTS:')[1]
+    elif '## EMBEDDED FACTS' in prompt_text:
+        facts_section = prompt_text.split('## EMBEDDED FACTS')[1]
 
-        # Split at INSTRUCTIONS to get just the facts part
-        if 'INSTRUCTIONS:' in facts_section:
-            facts_section = facts_section.split('INSTRUCTIONS:')[0]
+    if facts_section:
+        # Split at next section marker to get just the facts part
+        for marker in ['INSTRUCTIONS:', '## IMPROVISATION GUIDELINES', '## REMEMBER', '## YOUR ROLE', '## CRITICAL']:
+            if marker in facts_section:
+                facts_section = facts_section.split(marker)[0]
+                break
 
         # Parse individual facts (they start with -)
         fact_lines = [line.strip() for line in facts_section.split('\n') if line.strip().startswith('-')]
@@ -201,7 +212,6 @@ def evaluate_session(session_path: str, verbose: bool = True) -> Dict:
     # Parse notes from transcript
     messages = session_data.get('messages', [])
     all_notes = parse_notes_from_transcript(messages)
-    quirky_facts_noted = get_quirky_facts(all_notes)
 
     # Count conversation turns (excluding system messages)
     turns = sum(1 for m in messages if m.get('role') in ['user', 'assistant'])
@@ -239,7 +249,6 @@ def evaluate_session(session_path: str, verbose: bool = True) -> Dict:
         'discovery_details': [],
         'total_turns': turns,
         'total_notes': len(all_notes),
-        'quirky_facts_noted': len(quirky_facts_noted),
         'total_tokens': total_tokens,
         'interviewer_tokens': interviewer_tokens,
         'interviewee_tokens': interviewee_tokens
@@ -256,7 +265,6 @@ def evaluate_session(session_path: str, verbose: bool = True) -> Dict:
         print(f"  - Interviewer tokens: {results['interviewer_tokens']:,}")
         print(f"  - Interviewee tokens: {results['interviewee_tokens']:,}")
         print(f"Total notes taken: {results['total_notes']}")
-        print(f"Quirky facts noted: {results['quirky_facts_noted']}")
         print(f"\n{'='*60}")
         print("Fact Discovery Analysis")
         print(f"{'='*60}")
