@@ -15,7 +15,7 @@ from trl import SFTTrainer, ModelConfig, SFTConfig, GRPOTrainer, GRPOConfig
 from datasets import load_dataset
 from utils.helpers import get_checkpoint, make_conversation, get_device_info, get_model_name
 from utils.arguments import parse_arguments
-from utils.rewards import format_reward, equation_reward_func, length_penalty_func, accuracy_reward
+from utils.rewards import format_reward, equation_reward_func, length_penalty_func, accuracy_reward, completion_length_penalty
 from utils.callbacks import RewardMetricsCallback
 
 os.environ["HF_HUB_DISABLE_IMPLICIT_TOKEN"] = "1"
@@ -122,7 +122,7 @@ def run_training(args, model, training_config, dataset, tokenizer):
         tokenizer=tokenizer
     )
   elif args.method == "grpo":
-    rewards = [format_reward, accuracy_reward]
+    rewards = [format_reward, accuracy_reward, completion_length_penalty]
     callback = RewardMetricsCallback(reward_functions=rewards)
     trainer = GRPOTrainer(model=model, reward_funcs=rewards, args=training_config,
         train_dataset=dataset['train'], callbacks=[callback]

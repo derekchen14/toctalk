@@ -211,3 +211,44 @@ def length_penalty_func(completions, target, **kwargs):
       rewards.append(0.0) 
   return rewards
 
+def completion_length_penalty(completions, **kwargs):
+  """
+  Applies a penalty for completions longer than 250 characters.
+  Penalizes 1% per character above 250.
+  
+  Args:
+    completions (list): Generated outputs
+  Returns:
+    list[float]: Penalty scores (1.0 for length <= 250, decreasing for longer)
+  """
+  rewards = []
+  for completion in completions:
+    try:
+      # Extract the actual text content from the completion data structure
+      completion_text = completion[0]["content"] if isinstance(completion, list) and len(completion) > 0 and isinstance(completion[0], dict) else str(completion)
+      
+      # Count characters in the completion
+      length = len(completion_text)
+      
+      if length <= 250:
+        rewards.append(1.0)  # No penalty
+      else:
+        # Apply 1% penalty per character over 250
+        excess_chars = length - 250
+        penalty = max(0.0, 1.0 - 0.01 * excess_chars)
+        rewards.append(penalty)
+        
+      # Debug logging occasionally
+      if random.random() < 0.05:  # 5% chance
+        os.makedirs("completion_samples", exist_ok=True)
+        debug_file = os.path.join("completion_samples", "length_penalty_debug.txt")
+        with open(debug_file, "a") as f:
+          f.write(f"\n=== LENGTH PENALTY DEBUG ===\n")
+          f.write(f"Length: {length} chars\n")
+          f.write(f"Penalty: {rewards[-1]:.3f}\n")
+          f.write(f"Content: {repr(completion_text[:100])}...\n")
+          
+    except Exception as e:
+      rewards.append(0.5)  # Default middle penalty if extraction fails
+  return rewards
+
