@@ -32,7 +32,7 @@ def parse_arguments():
   training_group = parser.add_argument_group('training', 'Training configuration arguments')
   training_group.add_argument("--num_train_epochs", type=int, default=1, help="Number of training epochs")
   training_group.add_argument("--method", type=str, default="sft", choices=["sft", "dpo", "ppo", "grpo"], help="Training method")
-  training_group.add_argument("--per_device_train_batch_size", type=int, default=8, help="Batch size per device")
+  training_group.add_argument("--per_device_bs", type=int, default=8, help="Batch size per device for training")
   training_group.add_argument("--grad_accum_steps", type=int, default=2, help="Gradient accumulation steps")
   training_group.add_argument("--learning_rate", type=float, default=2e-4, help="Learning rate")
   training_group.add_argument("--lr_scheduler_type", type=str, default="constant", help="Learning rate scheduler type")

@@ -5,13 +5,16 @@ A minimal LLM chat framework for research on task-oriented conversation. Built w
 ## Setup
 
 ```bash
-# Create and activate virtual environment
-python3 -m venv venv
-source venv/bin/activate
+# Install uv (if not already installed)
+curl -LsSf https://astral.sh/uv/install.sh | sh
+source $HOME/.cargo/env
+
+# Create and activate virtual environment with uv
+uv venv
+source .venv/bin/activate
 
 # Install dependencies
 uv pip install -r requirements.txt
-uv pip install psutil
 uv pip install flash_attn --no-build-isolation
 
 # Add your Anthropic API key
@@ -24,7 +27,7 @@ echo "ANTHROPIC_API_KEY=your-key-here" > .env
 
 ```bash
 # Start the web server
-source venv/bin/activate
+source .venv/bin/activate
 python run_web_app.py
 ```
 Open http://localhost:8000 in your browser to start chatting.
@@ -33,9 +36,39 @@ Open http://localhost:8000 in your browser to start chatting.
 
 ```bash
 # Train the first time model
-python training.py --allow_download
+python training.py --allow_download --output_dir ./results --dataset_path your_dataset
 # All future calls, especially for running multiple trials as once
 python training.py --use_checkpoint
+```
+
+#### Tensorboard Monitoring
+
+Tensorboard logging is automatically enabled when `--output_dir` is specified:
+
+```bash
+# Start training (Tensorboard auto-enabled)
+python training.py --method grpo --output_dir ./results --dataset_path your_dataset --model_size small
+
+# View training metrics (separate terminal)
+tensorboard --logdir ./results
+# Open http://localhost:6006
+```
+
+**Experiment Naming**: Runs are organized as `{model_name}_{model_size}_LR{learning_rate}_v{seed}`
+
+**Available Metrics**:
+- Training loss, learning rate, gradient norms
+- Custom reward metrics (format compliance, accuracy)
+- Training steps per second
+
+**Cloud Usage (Lambda Labs)**:
+```bash
+# Create SSH tunnel from local machine
+ssh -L 6006:localhost:6006 username@lambda-instance-ip
+
+# Start Tensorboard on Lambda instance
+tensorboard --logdir ./results --bind_all
+# Access via http://localhost:6006 on local machine
 ```
 
 ## Project Structure
