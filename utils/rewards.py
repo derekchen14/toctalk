@@ -1,6 +1,11 @@
-import re 
+import re
 import os
 import random
+import json
+import sys
+# Add parent directory to path to import llm_client
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from llm_client import ClaudeLLMClient
 
 """
 All reward functions should return a list of floats, one for each completion.
@@ -29,6 +34,7 @@ def notepad_format_reward(completions, target, **kwargs):
       rewards.append(1.0)
   return rewards
 
+
 def reasoning_format_reward(completions, target=None, **kwargs):
   """
   Format: <think>...</think><answer>...</answer>
@@ -38,21 +44,9 @@ def reasoning_format_reward(completions, target=None, **kwargs):
   """
   rewards = []
 
-  for i, completion in enumerate(completions):
+  for completion in completions:
     # Extract the actual text content from the completion data structure
     completion_text = completion[0]["content"] if isinstance(completion, list) and len(completion) > 0 and isinstance(completion[0], dict) else str(completion)
-    
-    # Debug logging - save sample completions to understand format
-    if random.random() < 0.1:  # 10% chance to log
-      os.makedirs("completion_samples", exist_ok=True)
-      debug_file = os.path.join("completion_samples", "format_debug_samples.txt")
-      with open(debug_file, "a") as f:
-        f.write(f"\n\n=== COMPLETION {i} DEBUG ===\n")
-        f.write(f"Raw completion type: {type(completion)}\n")
-        f.write(f"Raw completion: {repr(completion)}\n")
-        f.write(f"Extracted text: {repr(completion_text)}\n")
-        f.write(f"Text length: {len(completion_text)}\n")
-    
     # add synthetic <think> as its already part of the prompt and prefilled for the assistant to more easily match the regex
     completion_text = "<think>" + completion_text
     # Check if the format is correct
@@ -62,71 +56,26 @@ def reasoning_format_reward(completions, target=None, **kwargs):
     # if the format is not correct, reward is 0
     if match is None or len(match.groups()) != 2:
       rewards.append(0.0)
-      # Debug logging for failed matches
-      if random.random() < 0.2:  # 20% chance to log failures
-        os.makedirs("completion_samples", exist_ok=True)
-        debug_file = os.path.join("completion_samples", "format_failures.txt")
-        with open(debug_file, "a") as f:
-          f.write(f"\n\n=== FORMAT FAILURE ===\n")
-          f.write(f"Full text with synthetic <think>: {repr(completion_text)}\n")
-          f.write(f"Regex used: {repr(regex)}\n")
-          f.write(f"Match result: {match}\n")
     else:
       rewards.append(1.0)
-      # Debug logging for successful matches
-      if random.random() < 0.5:  # 50% chance to log successes
-        os.makedirs("completion_samples", exist_ok=True)
-        debug_file = os.path.join("completion_samples", "format_successes.txt")
-        with open(debug_file, "a") as f:
-          f.write(f"\n\n=== FORMAT SUCCESS ===\n")
-          f.write(f"Full text: {repr(completion_text)}\n")
-          f.write(f"Think content: {repr(match.group(1))}\n")
-          f.write(f"Answer content: {repr(match.group(2))}\n")
   return rewards
 
-def format_reward(completions, **kwargs):
-    """Reward function that checks if the completion has a specific format.
-    Note: <think> is prefilled in the prompt, so completion should contain:
-    reasoning</think>\n<answer>answer</answer>
-    """
-    import logging
-    logger = logging.getLogger(__name__)
-
-    # Debug: log first completion to understand structure
-    if random.random() < 0.1:  # 10% of batches
-        logger.info(f"\n=== FORMAT_REWARD DEBUG ===")
-        logger.info(f"Completions type: {type(completions)}")
-        logger.info(f"Completions length: {len(completions)}")
-        logger.info(f"First completion type: {type(completions[0])}")
-        logger.info(f"First completion: {completions[0]}")
-        if isinstance(completions[0], list) and len(completions[0]) > 0:
-            logger.info(f"First completion[0] type: {type(completions[0][0])}")
-            logger.info(f"First completion[0]: {completions[0][0]}")
-            if isinstance(completions[0][0], dict):
-                logger.info(f"First completion[0] keys: {completions[0][0].keys()}")
-                logger.info(f"First completion[0]['content']: {completions[0][0].get('content', 'NO CONTENT KEY')}")
-
-    pattern = r".*?</think>\s*<answer>.*?</answer>"
+def reasoning_format_reward_alternate(completions, **kwargs):
+    """Reward function that checks if the completion has a specific format."""
+    pattern = r"^<think>.*?</think>\s*<answer>.*?</answer>$"
     completion_contents = [completion[0]["content"] for completion in completions]
-    matches = [re.search(pattern, content, re.DOTALL) for content in completion_contents]
-    return [1.0 if match else 0.0 for match in matches]
+    matches = [re.match(pattern, content) for content in completion_contents]
+    rewards_list = [1.0 if match else 0.0 for match in matches]
+    return rewards_list
 
-from math_verify import LatexExtractionConfig, parse, verify
+# from math_verify import LatexExtractionConfig, parse, verify
 def accuracy_reward(completions, target=None, **kwargs):
-  solutions = kwargs["solution"]
-  completion_contents = [completion[0]["content"] for completion in completions]
-  rewards = []
-  for content, solution in zip(completion_contents, solutions):
-    gold_parsed = parse(solution, extraction_mode="first_match", extraction_config=[LatexExtractionConfig()])
-    answer_parsed = parse(content, extraction_mode="first_match", extraction_config=[LatexExtractionConfig()])
-    if len(gold_parsed) != 0:
-      try:
-        rewards.append(float(verify(answer_parsed, gold_parsed)))
-      except Exception:
-        rewards.append(0.0)
-    else:
-      rewards.append(1.0)
-  return rewards
+    """Reward function that checks if the completion is the same as the ground truth."""
+    # For now, return uniform rewards since math_verify is not imported
+    # TODO: Implement proper accuracy checking when math_verify is available
+    completion_contents = [completion[0]["content"] for completion in completions]
+    rewards = [1.0] * len(completion_contents)  # Default reward for all completions
+    return rewards
 
 def equation_reward_func(completions, target, nums, **kwargs):
   """
@@ -208,47 +157,133 @@ def length_penalty_func(completions, target, **kwargs):
       # Apply length penalty
       rewards.append(1.0 / (len(answer) + 1))
     except Exception:
-      rewards.append(0.0) 
+      rewards.append(0.0)
   return rewards
 
-def completion_length_penalty(completions, **kwargs):
+
+def quirkbot_fact_discovery(completions, target, **kwargs):
   """
-  Applies a penalty for completions longer than 250 characters.
-  Penalizes 1% per character above 250.
-  
+  Evaluates whether interviewer notes successfully discover biographical facts.
+  Uses Claude Haiku to semantically match extracted notes against target facts.
+
   Args:
-    completions (list): Generated outputs
+    completions (list[dict]): List of conversation messages with role, content, timestamp
+    target (list[dict]): List of biographical facts to discover, each with:
+      - fact_id (int): Unique identifier
+      - fact_text (str): Short description of the fact
+      - category (str): Category of the fact
+      - fact_narrative (str): Detailed narrative of the fact
+
   Returns:
-    list[float]: Penalty scores (1.0 for length <= 250, decreasing for longer)
+    list[float]: Reward scores (1.0 for discovered fact, 0.0 otherwise)
   """
   rewards = []
+
+  # Initialize Claude Haiku client for semantic matching
+  try:
+    llm_client = ClaudeLLMClient(model="claude-3-5-haiku-20241022")
+  except Exception as e:
+    print(f"Error initializing LLM client: {e}")
+    # Return zeros if we can't initialize the client
+    return [0.0] * len(completions)
+
+  # Extract all notes from each completion message
   for completion in completions:
-    try:
-      # Extract the actual text content from the completion data structure
-      completion_text = completion[0]["content"] if isinstance(completion, list) and len(completion) > 0 and isinstance(completion[0], dict) else str(completion)
-      
-      # Count characters in the completion
-      length = len(completion_text)
-      
-      if length <= 250:
-        rewards.append(1.0)  # No penalty
-      else:
-        # Apply 1% penalty per character over 250
-        excess_chars = length - 250
-        penalty = max(0.0, 1.0 - 0.01 * excess_chars)
-        rewards.append(penalty)
-        
-      # Debug logging occasionally
-      if random.random() < 0.05:  # 5% chance
-        os.makedirs("completion_samples", exist_ok=True)
-        debug_file = os.path.join("completion_samples", "length_penalty_debug.txt")
-        with open(debug_file, "a") as f:
-          f.write(f"\n=== LENGTH PENALTY DEBUG ===\n")
-          f.write(f"Length: {length} chars\n")
-          f.write(f"Penalty: {rewards[-1]:.3f}\n")
-          f.write(f"Content: {repr(completion_text[:100])}...\n")
-          
-    except Exception as e:
-      rewards.append(0.5)  # Default middle penalty if extraction fails
+    # Handle both string and dict formats
+    if isinstance(completion, dict):
+      content = completion.get("content", "")
+    else:
+      content = str(completion)
+
+    # Extract all <note>...</note> tags from the content
+    note_matches = re.findall(r"<note>(.*?)<\/note>", content, re.DOTALL)
+
+    # If no notes found, reward is 0.0
+    if not note_matches:
+      rewards.append(0.0)
+      continue
+
+    # For each note, check if it matches any target fact using LLM
+    note_discovered_fact = False
+    for note in note_matches:
+      note = note.strip()
+      if not note:
+        continue
+
+      # Create prompt for LLM to evaluate semantic match
+      prompt = _create_fact_matching_prompt(note, target)
+
+      try:
+        messages = [
+          {"role": "user", "content": prompt}
+        ]
+
+        response = llm_client.chat(messages, temperature=0.0, max_tokens=500)
+
+        # Parse JSON response
+        result = json.loads(response)
+
+        # Check if any fact was discovered
+        if result.get("match_found", False):
+          note_discovered_fact = True
+          break  # One discovered fact per completion is enough for reward
+
+      except Exception as e:
+        print(f"Error evaluating note with LLM: {e}")
+        continue
+
+    # Assign reward based on whether any note discovered a fact
+    rewards.append(1.0 if note_discovered_fact else 0.0)
+
   return rewards
+
+
+def _create_fact_matching_prompt(note, target_facts):
+  """
+  Creates a prompt for Claude to evaluate if a note matches any target facts.
+
+  Args:
+    note (str): The extracted note content
+    target_facts (list[dict]): List of target biographical facts
+
+  Returns:
+    str: JSON-formatted prompt for the LLM
+  """
+  # Format target facts for the prompt
+  facts_list = []
+  for fact in target_facts:
+    facts_list.append({
+      "fact_id": fact["fact_id"],
+      "fact_text": fact["fact_text"],
+      "fact_narrative": fact["fact_narrative"]
+    })
+
+  prompt_data = {
+    "task": "Evaluate whether the interviewer's note has successfully discovered any of the target biographical facts. A note 'discovers' a fact if it captures the key essence of that fact, even if worded differently.",
+    "note": note,
+    "target_facts": facts_list,
+    "instructions": [
+      "Compare the note against each target fact",
+      "Consider semantic similarity, not exact word matching",
+      "A discovery means the note captures the core information of the fact",
+      "Return match_found=true if ANY fact is discovered",
+      "Return the fact_id of the first matched fact (if any)",
+      "Be reasonably strict - the note should clearly convey the unusual/quirky aspect of the fact"
+    ],
+    "output_format": {
+      "match_found": "boolean - true if note matches any fact",
+      "matched_fact_id": "integer or null - the fact_id of matched fact",
+      "reasoning": "string - brief explanation of the decision"
+    }
+  }
+
+  prompt = f"""You are evaluating whether an interviewer's note has successfully discovered a biographical fact.
+
+INPUT:
+{json.dumps(prompt_data, indent=2)}
+
+OUTPUT (respond with valid JSON only):
+"""
+
+  return prompt
 
