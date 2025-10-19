@@ -131,7 +131,7 @@ def run_training(args, model, training_config, dataset, tokenizer):
     )
 
   # Training loop
-  last_checkpoint = get_checkpoint(training_config)
+  last_checkpoint = None # get_checkpoint(training_config)
   if args.use_checkpoint and last_checkpoint is not None:
     logger.info(f'Checkpoint detected, resuming training at {last_checkpoint}.')
     model_checkpoint = last_checkpoint
@@ -239,6 +239,7 @@ def args_to_configs(args, device_info):
         output_dir=args.output_dir,
         learning_rate=args.learning_rate,
         remove_unused_columns=False,  # to access the solution column in accuracy_reward
+        per_device_train_batch_size=args.per_device_bs,
         gradient_accumulation_steps=args.grad_accum_steps,
         num_train_epochs=args.num_train_epochs,
         report_to=report_to, bf16=True, push_to_hub=False,
