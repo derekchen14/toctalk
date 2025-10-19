@@ -12,6 +12,7 @@ source $HOME/.cargo/env
 # Create and activate virtual environment with uv
 uv venv
 source .venv/bin/activate
+# Full path: ~/TocTalkFilesystem/.venv/bin/activate
 
 # Install dependencies
 uv pip install -r requirements.txt
@@ -26,17 +27,18 @@ echo "ANTHROPIC_API_KEY=your-key-here" > .env
 ### Interactive Web Chat
 
 ```bash
-# Start the web server
 source .venv/bin/activate
-python run_web_app.py
+# uncomment the section related to web_chat.py in run.sh
+sh run.sh 
 ```
 Open http://localhost:8000 in your browser to start chatting.
 
 ### Model Training
 
 ```bash
-# Train the first time model
-python training.py --allow_download --output_dir ./results --dataset_path your_dataset
+source .venv/bin/activate
+# Uncomment the section related to training.py in run.sh
+sh run.sh
 # All future calls, especially for running multiple trials as once
 python training.py --use_checkpoint
 ```
@@ -64,7 +66,7 @@ tensorboard --logdir ./results
 **Cloud Usage (Lambda Labs)**:
 ```bash
 # Create SSH tunnel from local machine
-ssh -L 6006:localhost:6006 username@lambda-instance-ip
+ssh -i utils/toctalk.pem -L 6006:localhost:6006 ubuntu@129.213.82.0
 
 # Start Tensorboard on Lambda instance
 tensorboard --logdir ./results --bind_all

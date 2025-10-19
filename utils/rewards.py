@@ -39,9 +39,21 @@ def reasoning_format_reward(completions, target=None, **kwargs):
   """
   rewards = []
 
-  for completion in completions:
+  for i, completion in enumerate(completions):
     # Extract the actual text content from the completion data structure
     completion_text = completion[0]["content"] if isinstance(completion, list) and len(completion) > 0 and isinstance(completion[0], dict) else str(completion)
+    
+    # Debug logging - save sample completions to understand format
+    if random.random() < 0.1:  # 10% chance to log
+      os.makedirs("completion_samples", exist_ok=True)
+      debug_file = os.path.join("completion_samples", "format_debug_samples.txt")
+      with open(debug_file, "a") as f:
+        f.write(f"\n\n=== COMPLETION {i} DEBUG ===\n")
+        f.write(f"Raw completion type: {type(completion)}\n")
+        f.write(f"Raw completion: {repr(completion)}\n")
+        f.write(f"Extracted text: {repr(completion_text)}\n")
+        f.write(f"Text length: {len(completion_text)}\n")
+    
     # add synthetic <think> as its already part of the prompt and prefilled for the assistant to more easily match the regex
     completion_text = "<think>" + completion_text
     # Check if the format is correct
@@ -51,8 +63,26 @@ def reasoning_format_reward(completions, target=None, **kwargs):
     # if the format is not correct, reward is 0
     if match is None or len(match.groups()) != 2:
       rewards.append(0.0)
+      # Debug logging for failed matches
+      if random.random() < 0.2:  # 20% chance to log failures
+        os.makedirs("completion_samples", exist_ok=True)
+        debug_file = os.path.join("completion_samples", "format_failures.txt")
+        with open(debug_file, "a") as f:
+          f.write(f"\n\n=== FORMAT FAILURE ===\n")
+          f.write(f"Full text with synthetic <think>: {repr(completion_text)}\n")
+          f.write(f"Regex used: {repr(regex)}\n")
+          f.write(f"Match result: {match}\n")
     else:
       rewards.append(1.0)
+      # Debug logging for successful matches
+      if random.random() < 0.5:  # 50% chance to log successes
+        os.makedirs("completion_samples", exist_ok=True)
+        debug_file = os.path.join("completion_samples", "format_successes.txt")
+        with open(debug_file, "a") as f:
+          f.write(f"\n\n=== FORMAT SUCCESS ===\n")
+          f.write(f"Full text: {repr(completion_text)}\n")
+          f.write(f"Think content: {repr(match.group(1))}\n")
+          f.write(f"Answer content: {repr(match.group(2))}\n")
   return rewards
 
 def reasoning_format_reward_alternate(completions, **kwargs):
@@ -68,7 +98,20 @@ def accuracy_reward(completions, target=None, **kwargs):
     """Reward function that checks if the completion is the same as the ground truth."""
     # For now, return uniform rewards since math_verify is not imported
     # TODO: Implement proper accuracy checking when math_verify is available
-    completion_contents = [completion[0]["content"] for completion in completions]
+    completion_contents = [completion[0]["content"] if isinstance(completion, list) and len(completion) > 0 and isinstance(completion[0], dict) else str(completion) for completion in completions]
+    
+    # Debug logging for accuracy reward
+    if random.random() < 0.1:  # 10% chance to log
+      os.makedirs("completion_samples", exist_ok=True)
+      debug_file = os.path.join("completion_samples", "accuracy_debug.txt")
+      with open(debug_file, "a") as f:
+        f.write(f"\n\n=== ACCURACY DEBUG ===\n")
+        f.write(f"Target: {target}\n")
+        f.write(f"Number of completions: {len(completions)}\n")
+        for i, content in enumerate(completion_contents):
+          f.write(f"Completion {i}: {repr(content)}\n")
+        f.write(f"All rewards: 1.0 (hardcoded)\n")
+    
     rewards = [1.0] * len(completion_contents)  # Default reward for all completions
     return rewards
 
