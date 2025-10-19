@@ -1,6 +1,11 @@
-import re 
+import re
 import os
 import random
+import json
+import sys
+# Add parent directory to path to import llm_client
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from llm_client import ClaudeLLMClient
 
 """
 All reward functions should return a list of floats, one for each completion.
@@ -152,6 +157,133 @@ def length_penalty_func(completions, target, **kwargs):
       # Apply length penalty
       rewards.append(1.0 / (len(answer) + 1))
     except Exception:
-      rewards.append(0.0) 
+      rewards.append(0.0)
   return rewards
+
+
+def quirkbot_fact_discovery(completions, target, **kwargs):
+  """
+  Evaluates whether interviewer notes successfully discover biographical facts.
+  Uses Claude Haiku to semantically match extracted notes against target facts.
+
+  Args:
+    completions (list[dict]): List of conversation messages with role, content, timestamp
+    target (list[dict]): List of biographical facts to discover, each with:
+      - fact_id (int): Unique identifier
+      - fact_text (str): Short description of the fact
+      - category (str): Category of the fact
+      - fact_narrative (str): Detailed narrative of the fact
+
+  Returns:
+    list[float]: Reward scores (1.0 for discovered fact, 0.0 otherwise)
+  """
+  rewards = []
+
+  # Initialize Claude Haiku client for semantic matching
+  try:
+    llm_client = ClaudeLLMClient(model="claude-3-5-haiku-20241022")
+  except Exception as e:
+    print(f"Error initializing LLM client: {e}")
+    # Return zeros if we can't initialize the client
+    return [0.0] * len(completions)
+
+  # Extract all notes from each completion message
+  for completion in completions:
+    # Handle both string and dict formats
+    if isinstance(completion, dict):
+      content = completion.get("content", "")
+    else:
+      content = str(completion)
+
+    # Extract all <note>...</note> tags from the content
+    note_matches = re.findall(r"<note>(.*?)<\/note>", content, re.DOTALL)
+
+    # If no notes found, reward is 0.0
+    if not note_matches:
+      rewards.append(0.0)
+      continue
+
+    # For each note, check if it matches any target fact using LLM
+    note_discovered_fact = False
+    for note in note_matches:
+      note = note.strip()
+      if not note:
+        continue
+
+      # Create prompt for LLM to evaluate semantic match
+      prompt = _create_fact_matching_prompt(note, target)
+
+      try:
+        messages = [
+          {"role": "user", "content": prompt}
+        ]
+
+        response = llm_client.chat(messages, temperature=0.0, max_tokens=500)
+
+        # Parse JSON response
+        result = json.loads(response)
+
+        # Check if any fact was discovered
+        if result.get("match_found", False):
+          note_discovered_fact = True
+          break  # One discovered fact per completion is enough for reward
+
+      except Exception as e:
+        print(f"Error evaluating note with LLM: {e}")
+        continue
+
+    # Assign reward based on whether any note discovered a fact
+    rewards.append(1.0 if note_discovered_fact else 0.0)
+
+  return rewards
+
+
+def _create_fact_matching_prompt(note, target_facts):
+  """
+  Creates a prompt for Claude to evaluate if a note matches any target facts.
+
+  Args:
+    note (str): The extracted note content
+    target_facts (list[dict]): List of target biographical facts
+
+  Returns:
+    str: JSON-formatted prompt for the LLM
+  """
+  # Format target facts for the prompt
+  facts_list = []
+  for fact in target_facts:
+    facts_list.append({
+      "fact_id": fact["fact_id"],
+      "fact_text": fact["fact_text"],
+      "fact_narrative": fact["fact_narrative"]
+    })
+
+  prompt_data = {
+    "task": "Evaluate whether the interviewer's note has successfully discovered any of the target biographical facts. A note 'discovers' a fact if it captures the key essence of that fact, even if worded differently.",
+    "note": note,
+    "target_facts": facts_list,
+    "instructions": [
+      "Compare the note against each target fact",
+      "Consider semantic similarity, not exact word matching",
+      "A discovery means the note captures the core information of the fact",
+      "Return match_found=true if ANY fact is discovered",
+      "Return the fact_id of the first matched fact (if any)",
+      "Be reasonably strict - the note should clearly convey the unusual/quirky aspect of the fact"
+    ],
+    "output_format": {
+      "match_found": "boolean - true if note matches any fact",
+      "matched_fact_id": "integer or null - the fact_id of matched fact",
+      "reasoning": "string - brief explanation of the decision"
+    }
+  }
+
+  prompt = f"""You are evaluating whether an interviewer's note has successfully discovered a biographical fact.
+
+INPUT:
+{json.dumps(prompt_data, indent=2)}
+
+OUTPUT (respond with valid JSON only):
+"""
+
+  return prompt
 
