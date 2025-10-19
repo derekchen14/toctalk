@@ -15,7 +15,10 @@ from trl import SFTTrainer, ModelConfig, SFTConfig, GRPOTrainer, GRPOConfig
 from datasets import load_dataset
 from utils.helpers import get_checkpoint, make_conversation, get_device_info, get_model_name
 from utils.arguments import parse_arguments
-from utils.rewards import reasoning_format_reward, equation_reward_func, length_penalty_func, accuracy_reward
+from utils.rewards import format_reward, equation_reward_func, length_penalty_func, accuracy_reward
+
+os.environ["HF_HUB_DISABLE_IMPLICIT_TOKEN"] = "1"
+os.environ["TRANSFORMERS_OFFLINE"] = "1"  # Force offline mode
 
 ########################
 # Setup logging
@@ -48,13 +51,12 @@ def prepare_model(args, peft_config, device_info):
   """ Load the model and tokenizer. """
   model_name = get_model_name(args)
   local_only = not args.allow_download
-  print(f"device_info: {device_info}, model_name: {args.model_name}")
+  print(f"device_info: {device_info}, model_name: {model_name}")
 
   if device_info['hardware_type'] == 'nvidia_gpu':
     from liger_kernel.transformers import AutoLigerKernelForCausalLM
     attention_implementation = 'flash_attention_2'
     torch_datatype = torch.bfloat16
-    pin_memory = True
 
     quantization_config = BitsAndBytesConfig( load_in_4bit=args.load_in_4bit,
         bnb_4bit_use_double_quant=True, bnb_4bit_quant_type='nf4',
@@ -70,10 +72,8 @@ def prepare_model(args, peft_config, device_info):
       local_files_only=local_only
     )
   else:
-    use_liger = False
     attention_implementation = 'eager'
     torch_datatype = 'auto'
-    pin_memory = False
 
     model = AutoModelForCausalLM.from_pretrained(model_name,
       attn_implementation=attention_implementation,
@@ -88,12 +88,28 @@ def prepare_model(args, peft_config, device_info):
   peft_model = get_peft_model(model, peft_config)
   peft_model.print_trainable_parameters()
 
+  return peft_model
+
+def prepare_tokenizer(args, model):
+  model_name = get_model_name(args)
   tokenizer = AutoTokenizer.from_pretrained(model_name)
   # Make sure not to include any special tokens in vocab, since the embedding layers are not trainable with PEFT
   if tokenizer.pad_token is None:
-    tokenizer.pad_token = tokenizer.eos_token
+    # Set a proper pad token that is distinct from EOS
+    if tokenizer.unk_token is not None:
+      tokenizer.pad_token = tokenizer.unk_token
+    else:
+      tokenizer.add_special_tokens({'pad_token': '[PAD]'})
+      model.resize_token_embeddings(len(tokenizer))
 
-  return peft_model, tokenizer
+  # Configure padding side for causal LM
+  tokenizer.padding_side = 'left'  # Important for generation
+
+  model.config.eos_token_id = tokenizer.eos_token_id
+  model.config.pad_token_id = tokenizer.pad_token_id
+  model.generation_config.eos_token_id = tokenizer.eos_token_id
+  model.generation_config.pad_token_id = tokenizer.pad_token_id
+  return model, tokenizer
 
 def run_training(args, model, training_config, dataset, tokenizer):
   """Main training function."""
@@ -105,9 +121,22 @@ def run_training(args, model, training_config, dataset, tokenizer):
         tokenizer=tokenizer
     )
   elif args.method == "grpo":
-    reward_functions = [reasoning_format_reward, accuracy_reward]
+    reward_functions = [format_reward, accuracy_reward]
+
+    # Add a callback to log sample completions for debugging
+    from transformers import TrainerCallback
+    class LogCompletionCallback(TrainerCallback):
+        def on_step_end(self, args, state, control, **kwargs):
+            if state.global_step % 10 == 0 and hasattr(kwargs.get('model'), '_last_completions'):
+                logger.info(f"\n=== Sample completions at step {state.global_step} ===")
+                completions = kwargs.get('model')._last_completions[:2]  # Log first 2
+                for i, comp in enumerate(completions):
+                    logger.info(f"Completion {i} type: {type(comp)}")
+                    logger.info(f"Completion {i} content: {comp}")
+
     trainer = GRPOTrainer(model=model, reward_funcs=reward_functions, args=training_config,
-        train_dataset=dataset['train']
+        train_dataset=dataset['train'], processing_class=tokenizer,
+        callbacks=[LogCompletionCallback()]
     )
 
   # Training loop
@@ -195,6 +224,7 @@ def args_to_configs(args, device_info):
       dataloader_pin_memory=device_info['pin_memory'],
       dataset_text_field="text",  # Hardcoded default
       packing=True,  # Hardcoded default
+      hub_model_id=None,
     )
 
   elif args.method == "grpo":
@@ -204,7 +234,9 @@ def args_to_configs(args, device_info):
         remove_unused_columns=False,  # to access the solution column in accuracy_reward
         gradient_accumulation_steps=args.grad_accum_steps,
         num_train_epochs=args.num_train_epochs,
-        report_to=[], bf16=True, push_to_hub=False,  # Disable tensorboard
+        bf16=True, report_to=[],    # Disable tensorboard
+        push_to_hub=False, hub_model_id=None,  # stop talking to huggingface
+        hub_strategy="end",
         max_completion_length=args.max_completion_length,
         num_generations=args.num_generations,
         max_prompt_length=args.max_prompt_length,
@@ -227,7 +259,8 @@ if __name__ == '__main__':
   set_seed(training_config.seed)
 
   dataset_splits = prepare_dataset(args)
-  model, tokenizer = prepare_model(args, peft_config, device_info)
+  model = prepare_model(args, peft_config, device_info)
+  model, tokenizer = prepare_tokenizer(args, model)
   
   run_training(args, model, training_config, dataset_splits, tokenizer)
   run_evaluation(training_config, dataset_splits, tokenizer)

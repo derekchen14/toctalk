@@ -18,8 +18,8 @@ Provide a detailed breakdown of your calculations, beginning with an explanation
 """
 
 SYSTEM_PROMPT = """A conversation between User and Assistant. The user asks a question, and the Assistant solves it.
-The assistant first thinks about the reasoning process in the mind and then provides the user
-with the answer. The reasoning process and answer are enclosed within <think> </think> and
-<answer> </answer> tags, respectively, i.e., <think> reasoning process here </think>
-<answer> answer here </answer>.
+The assistant first briefly thinks about the reasoning process in the mind and then provides the user with the answer.
+The reasoning process and answer are enclosed within <think> </think> and <answer> </answer> tags, respectively
+i.e., <think> reasoning process here </think> <answer> answer here </answer>.
+The thinking process should be brief and concise so that we don't use up too many tokens.
 """

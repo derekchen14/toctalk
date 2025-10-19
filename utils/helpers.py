@@ -29,6 +29,7 @@ def make_conversation(example):
         "prompt": [
             {"role": "system", "content": SYSTEM_PROMPT},
             {"role": "user", "content": example["problem"]},
+            {"role": "assistant", "content": "<think>"},  # Prefill the opening tag
         ],
     }
 

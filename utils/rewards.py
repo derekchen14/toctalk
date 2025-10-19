@@ -29,7 +29,6 @@ def notepad_format_reward(completions, target, **kwargs):
       rewards.append(1.0)
   return rewards
 
-
 def reasoning_format_reward(completions, target=None, **kwargs):
   """
   Format: <think>...</think><answer>...</answer>
@@ -55,22 +54,49 @@ def reasoning_format_reward(completions, target=None, **kwargs):
       rewards.append(1.0)
   return rewards
 
-def reasoning_format_reward_alternate(completions, **kwargs):
-    """Reward function that checks if the completion has a specific format."""
-    pattern = r"^<think>.*?</think>\s*<answer>.*?</answer>$"
-    completion_contents = [completion[0]["content"] for completion in completions]
-    matches = [re.match(pattern, content) for content in completion_contents]
-    rewards_list = [1.0 if match else 0.0 for match in matches]
-    return rewards_list
+def format_reward(completions, **kwargs):
+    """Reward function that checks if the completion has a specific format.
+    Note: <think> is prefilled in the prompt, so completion should contain:
+    reasoning</think>\n<answer>answer</answer>
+    """
+    import logging
+    logger = logging.getLogger(__name__)
 
-# from math_verify import LatexExtractionConfig, parse, verify
-def accuracy_reward(completions, target=None, **kwargs):
-    """Reward function that checks if the completion is the same as the ground truth."""
-    # For now, return uniform rewards since math_verify is not imported
-    # TODO: Implement proper accuracy checking when math_verify is available
+    # Debug: log first completion to understand structure
+    if random.random() < 0.1:  # 10% of batches
+        logger.info(f"\n=== FORMAT_REWARD DEBUG ===")
+        logger.info(f"Completions type: {type(completions)}")
+        logger.info(f"Completions length: {len(completions)}")
+        logger.info(f"First completion type: {type(completions[0])}")
+        logger.info(f"First completion: {completions[0]}")
+        if isinstance(completions[0], list) and len(completions[0]) > 0:
+            logger.info(f"First completion[0] type: {type(completions[0][0])}")
+            logger.info(f"First completion[0]: {completions[0][0]}")
+            if isinstance(completions[0][0], dict):
+                logger.info(f"First completion[0] keys: {completions[0][0].keys()}")
+                logger.info(f"First completion[0]['content']: {completions[0][0].get('content', 'NO CONTENT KEY')}")
+
+    pattern = r".*?</think>\s*<answer>.*?</answer>"
     completion_contents = [completion[0]["content"] for completion in completions]
-    rewards = [1.0] * len(completion_contents)  # Default reward for all completions
-    return rewards
+    matches = [re.search(pattern, content, re.DOTALL) for content in completion_contents]
+    return [1.0 if match else 0.0 for match in matches]
+
+from math_verify import LatexExtractionConfig, parse, verify
+def accuracy_reward(completions, target=None, **kwargs):
+  solutions = kwargs["solution"]
+  completion_contents = [completion[0]["content"] for completion in completions]
+  rewards = []
+  for content, solution in zip(completion_contents, solutions):
+    gold_parsed = parse(solution, extraction_mode="first_match", extraction_config=[LatexExtractionConfig()])
+    answer_parsed = parse(content, extraction_mode="first_match", extraction_config=[LatexExtractionConfig()])
+    if len(gold_parsed) != 0:
+      try:
+        rewards.append(float(verify(answer_parsed, gold_parsed)))
+      except Exception:
+        rewards.append(0.0)
+    else:
+      rewards.append(1.0)
+  return rewards
 
 def equation_reward_func(completions, target, nums, **kwargs):
   """
