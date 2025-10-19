@@ -116,17 +116,15 @@ def run_training(args, model, training_config, dataset, tokenizer):
   """Main training function."""
   training_config.distributed_state.wait_for_everyone()  # wait for all processes to load
   
-  # Initialize custom callback for enhanced logging
-  reward_functions = [reasoning_format_reward, accuracy_reward] if args.method == "grpo" else []
-  callback = RewardMetricsCallback(reward_functions=reward_functions)
-  
   # Initialize the Trainer
   if args.method == "sft":
     trainer = SFTTrainer(model=model, args=training_config, train_dataset=dataset['train'],
-        tokenizer=tokenizer, callbacks=[callback]
+        tokenizer=tokenizer
     )
   elif args.method == "grpo":
-    trainer = GRPOTrainer(model=model, reward_funcs=reward_functions, args=training_config,
+    rewards = [format_reward, accuracy_reward]
+    callback = RewardMetricsCallback(reward_functions=rewards)
+    trainer = GRPOTrainer(model=model, reward_funcs=rewards, args=training_config,
         train_dataset=dataset['train'], callbacks=[callback]
     )
 
