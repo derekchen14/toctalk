@@ -5,7 +5,7 @@ import platform
 import requests
 
 from trl import SFTConfig, GRPOConfig
-from prompts.setup import system_message, SYSTEM_PROMPT
+from prompts.setup import *
 from transformers.trainer_utils import get_last_checkpoint
 
 def get_checkpoint(training_args: SFTConfig | GRPOConfig):
@@ -14,24 +14,45 @@ def get_checkpoint(training_args: SFTConfig | GRPOConfig):
         last_checkpoint = get_last_checkpoint(training_args.output_dir)
     return last_checkpoint
 
-def create_conversation(sample):
+def make_conversation(task):
+  match task:
+    case "math": return make_ioi_conversation
+    case "countdown": return make_countdown_conversation
+    case "quirkbot": return make_quirkbot_conversation
+    case _: raise ValueError(f"Unknown task: {task}")
+  
+def make_quirkbot_conversation(example):
   convo = {
     "messages": [
       {"role": "system", "content": system_message},
-      {"role": "user", "content": sample["question"]},
-      {"role": "assistant", "content": sample["answer"]}
+      {"role": "user", "content": example["question"]},
+      {"role": "assistant", "content": example["answer"]}
     ]
   }
   return convo 
 
-def make_conversation(example):
-    return {
-        "prompt": [
-            {"role": "system", "content": SYSTEM_PROMPT},
-            {"role": "user", "content": example["problem"]},
-            {"role": "assistant", "content": "<think>"},  # Prefill the opening tag
-        ],
-    }
+def make_ioi_conversation(example):
+  convo = {
+    "prompt": [
+      {"role": "system", "content": ioi_math_prompt},
+      {"role": "user", "content": example["problem"]},
+      {"role": "assistant", "content": "<think>"},  # Prefill the opening tag
+    ],
+  }
+  return convo
+
+def make_countdown_conversation(example):
+  numbers, target = example["nums"], example["target"]
+  user_msg = f"Using the numbers {numbers}, create an equation that equals {target}." + countdown_user_prompt
+
+  convo = {
+    "prompt": [
+      {"role": "system", "content": countdown_system_prompt},
+      {"role": "user", "content": user_msg},
+      {"role": "assistant", "content": "Let me solve this step by step.\n<think>"},  # Prefill the opening tag
+    ],
+  }
+  return convo
 
 def save_completion_sample(completion):
   if random.random() < 0.1:  # 1% chance to write samples into a file

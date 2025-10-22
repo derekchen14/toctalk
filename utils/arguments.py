@@ -8,6 +8,8 @@ def parse_arguments():
   model_group.add_argument("--model_name", type=str, default=None, help="Model name or path using Huggingface Hub")
   model_group.add_argument("--model_size", type=str, default="small", choices=["small", "medium", "large"],
                            help="Model size, which will be overridden by model_name if provided")
+  model_group.add_argument("--task", type=str, default="math", 
+                           choices=["math", "quirkbot", "countdown"], help="Task to perform")
   model_group.add_argument("--allow_download", action="store_true", help="Allow downloading models from Huggingface Hub")
   model_group.add_argument("--use_checkpoint", action="store_true", help="Use previous checkpoint for training")
  

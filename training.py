@@ -15,7 +15,7 @@ from trl import SFTTrainer, ModelConfig, SFTConfig, GRPOTrainer, GRPOConfig
 from datasets import load_dataset
 from utils.helpers import get_checkpoint, make_conversation, get_device_info, get_model_name
 from utils.arguments import parse_arguments
-from utils.rewards import format_reward, equation_reward_func, length_penalty_func, accuracy_reward, completion_length_penalty
+from utils.rewards import format_reward, accuracy_reward, completion_length_penalty
 from utils.callbacks import RewardMetricsCallback
 
 os.environ["HF_HUB_DISABLE_IMPLICIT_TOKEN"] = "1"
@@ -34,18 +34,23 @@ logger.addHandler(handler)
 def prepare_dataset(args):
   """Prepare dataset splits for training and evaluation."""
   # train_dataset = load_dataset('json', data_files=script_args.dataset_id_or_path, split='train')
-  train_data, test_data = load_dataset(args.dataset_path, split=["train[:5%]", "test"])
   # train_dataset = dataset.map(create_conversation, remove_columns=dataset.features, batched=False)
 
-  # --- Can split further if we want ---
-  # train_test_split = dataset.train_test_split(test_size=0.1)
-  # train_dataset = train_test_split["train"]
-  # train_dataset = train_dataset.shuffle(seed=42).select(range(4000))
-  # print(train_data)
-  train_dataset = train_data.map(make_conversation)
-  train_dataset = train_dataset.remove_columns(["messages", "problem"])
-  test_data = test_data.map(make_conversation)
-  dataset_splits = {'train': train_dataset, 'dev': [], 'test': test_data}
+  make_convo_function = make_conversation(args.task)
+
+  if args.task == "math":
+    train_data, test_data = load_dataset(args.dataset_path, split=["train", "test"])
+    train_dataset = train_data.shuffle(seed=args.seed).select(range(12000))
+    train_dataset = train_dataset.remove_columns(["messages", "problem"])
+    test_dataset = test_data.map(make_convo_function)
+    dataset_splits = {'train': train_dataset, 'test': test_dataset}
+
+  elif args.task == "countdown":
+    full_data = load_dataset(args.dataset_path, split="train")
+    filtered_data = full_data.shuffle(seed=args.seed).select(range(50000))
+    filtered_dataset = filtered_data.map(make_convo_function)
+    dataset_splits = filtered_dataset.train_test_split(test_size=0.1)
+
   return dataset_splits
 
 def prepare_model(args, peft_config, device_info):

@@ -1,6 +1,7 @@
 system_message = """Solve the given high school math problem by providing a clear explanation of each step leading to the final solution.
  
-Provide a detailed breakdown of your calculations, beginning with an explanation of the problem and describing how you derive each formula, value, or conclusion. Use logical steps that build upon one another, to arrive at the final answer in a systematic manner.
+Provide a detailed breakdown of your calculations, beginning with an explanation of the problem and describing how you derive each formula, value, or conclusion. 
+Use logical steps that build upon one another, to arrive at the final answer in a systematic manner.
  
 # Steps
  
@@ -17,7 +18,13 @@ Provide a detailed breakdown of your calculations, beginning with an explanation
 - Assume the level of mathematics is suitable for high school, and avoid overly advanced math techniques unless they are common at that level.
 """
 
-SYSTEM_PROMPT = """A conversation between User and Assistant. The user asks a question, and the Assistant solves it.
+countdown_system_prompt = """You are a helpful assistant. You first think about the reasoning process in the mind and then provides the user with the answer.
+The brief reasoning process is enclosed within <think> </think> tags, while the final answer is enclosed within <answer> </answer> tags."""
+
+countdown_user_prompt = """You can use basic arithmetic operations (+, -, *, /) and each number can only be used once.
+Show your work in <think> </think> tags. And return the final equation and answer in <answer> </answer> tags, for example <answer> (1 + 2) / 3 = 1 </answer>."""
+
+ioi_math_prompt = """A conversation between User and Assistant. The user asks a question, and the Assistant solves it.
 The assistant first briefly thinks about the reasoning process in the mind and then provides the user with the answer.
 The reasoning process and answer are enclosed within <think> </think> and <answer> </answer> tags, respectively
 i.e., <think> reasoning process here </think> <answer> answer here </answer>.
