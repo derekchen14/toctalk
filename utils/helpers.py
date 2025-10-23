@@ -99,7 +99,8 @@ def get_model_name(args):
       return args.model_name
 
     size_to_model = {
-        "small": "Qwen/Qwen3-0.6B",
+        "tiny": "Qwen/Qwen3-0.6B",
+        "small": "Qwen/Qwen2.5-3B-Instruct",
         "medium": "Qwen/Qwen3-4B-Instruct-2507", 
         "large": "Qwen/Qwen3-30B-A3B-Instruct-2507"
     }

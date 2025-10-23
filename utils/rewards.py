@@ -4,119 +4,113 @@ import random
 
 """
 All reward functions should return a list of floats, one for each completion.
+Input arguments:
+  completions (list): Generated outputs
+  target (list): Expected answers
+  source (list): Inputs to the model, if applicable
 """
 
-def notepad_format_reward(completions, target, **kwargs):
+def notepad_format_reward(completions, target, source=None):
   """
   Format: <think>...</think><note>...</note>
+    But the note tag is optional.
   Args:
     completions (list[str]): Generated outputs
     target (list[str]): Expected answers
   """
   rewards = []
 
-  for completion, gt in zip(completions, target):
-    # add synthetic <think> as its already part of the prompt and prefilled for the assistant to more easily match the regex
-    completion = "<think>" + completion
-    # Check if the format is correct
-    regex = r"^<think>([^<]*(?:<(?!/?think>)[^<]*)*)<\/think>\n<note>([\s\S]*?)<\/note>$"
-
-    match = re.search(regex, completion, re.DOTALL) 
-    # if the format is not correct, reward is 0
-    if match is None or len(match.groups()) != 2:
+  for completion in completions:
+    try:
+      content = '<think>' + completion[0]['content']
+      regex = r"<think>(.*?)</think>\s*<note>(.*?)</note>"
+      match = re.search(regex, content, re.DOTALL) 
+      if match is None or len(match.groups()) > 2:
+        rewards.append(0.0)
+      else:
+        rewards.append(1.0)
+    except Exception:
       rewards.append(0.0)
-    else:
-      rewards.append(1.0)
   return rewards
 
-def reasoning_format_reward(completions, target=None, **kwargs):
-  """
-  Format: <think>...</think><answer>...</answer>
-  Args:
-    completions (list[str]): Generated outputs
-    target (list[str]): Expected answers (optional, not used in format checking)
+def format_reward(completions, target, source=None):
+  """Reward function that checks if the completion has a specific format.
+  Note: <think> is prefilled in the prompt, so completion should contain:
+  reasoning</think>\n<answer>answer</answer>
   """
   rewards = []
+  for completion, ground_truth in zip(completions, target):
 
-  for i, completion in enumerate(completions):
-    # Extract the actual text content from the completion data structure
-    completion_text = completion[0]["content"] if isinstance(completion, list) and len(completion) > 0 and isinstance(completion[0], dict) else str(completion)
-    
-    # Debug logging - save sample completions to understand format
-    if random.random() < 0.1:  # 10% chance to log
-      os.makedirs("completion_samples", exist_ok=True)
-      debug_file = os.path.join("completion_samples", "format_debug_samples.txt")
-      with open(debug_file, "a") as f:
-        f.write(f"\n\n=== COMPLETION {i} DEBUG ===\n")
-        f.write(f"Raw completion type: {type(completion)}\n")
-        f.write(f"Raw completion: {repr(completion)}\n")
-        f.write(f"Extracted text: {repr(completion_text)}\n")
-        f.write(f"Text length: {len(completion_text)}\n")
-    
-    # add synthetic <think> as its already part of the prompt and prefilled for the assistant to more easily match the regex
-    completion_text = "<think>" + completion_text
-    # Check if the format is correct
-    regex = r"^<think>([^<]*(?:<(?!/?think>)[^<]*)*)<\/think>\n<answer>([\s\S]*?)<\/answer>$"
+    try:
+      content = '<think>' + completion[0]['content']
+      if random.random() < 0.1:  # 10% of batches
+        print(f"Sample: {content}")
+        print(f"Target: {ground_truth}")
+      regex_pattern = r'^<think>((?:(?!<think>|</think>).)*?)</think>\s*<answer>(.*?)</answer>$'
 
-    match = re.search(regex, completion_text, re.DOTALL) 
-    # if the format is not correct, reward is 0
-    if match is None or len(match.groups()) != 2:
+      match = re.search(regex_pattern, content, re.DOTALL)
+      if match is None or len(match.groups()) != 2:
+        rewards.append(0.0)
+      else:
+        rewards.append(1.0)
+    except Exception:
       rewards.append(0.0)
-      # Debug logging for failed matches
-      if random.random() < 0.2:  # 20% chance to log failures
-        os.makedirs("completion_samples", exist_ok=True)
-        debug_file = os.path.join("completion_samples", "format_failures.txt")
-        with open(debug_file, "a") as f:
-          f.write(f"\n\n=== FORMAT FAILURE ===\n")
-          f.write(f"Full text with synthetic <think>: {repr(completion_text)}\n")
-          f.write(f"Regex used: {repr(regex)}\n")
-          f.write(f"Match result: {match}\n")
-    else:
-      rewards.append(1.0)
-      # Debug logging for successful matches
-      if random.random() < 0.5:  # 50% chance to log successes
-        os.makedirs("completion_samples", exist_ok=True)
-        debug_file = os.path.join("completion_samples", "format_successes.txt")
-        with open(debug_file, "a") as f:
-          f.write(f"\n\n=== FORMAT SUCCESS ===\n")
-          f.write(f"Full text: {repr(completion_text)}\n")
-          f.write(f"Think content: {repr(match.group(1))}\n")
-          f.write(f"Answer content: {repr(match.group(2))}\n")
   return rewards
-
-def format_reward(completions, **kwargs):
-    """Reward function that checks if the completion has a specific format.
-    Note: <think> is prefilled in the prompt, so completion should contain:
-    reasoning</think>\n<answer>answer</answer>
+ 
+def equation_reward(completions, target, source=None):
+    """ Evaluates completions based on Mathematical correctness of the answer for Countdown Game
+    Args:
+        completions (list[str]): Generated outputs
+        target (list[str]): Expected answers
+        source (list[str]): Available numbers for forming the equation
+    Returns:
+        list[float]: Reward scores
     """
-    import logging
-    logger = logging.getLogger(__name__)
+    rewards = []
+    for completion, ground_truth, numbers in zip(completions, target, source):
+      try:
+        content = completion[0]['content']
+        # extract the answer part
+        match = re.search(r"<answer>(.*?)<\/answer>", content)
+        if match is None:
+          rewards.append(0.0)
+          continue
 
-    # Debug: log first completion to understand structure
-    if random.random() < 0.1:  # 10% of batches
-        logger.info(f"\n=== FORMAT_REWARD DEBUG ===")
-        logger.info(f"Completions type: {type(completions)}")
-        logger.info(f"Completions length: {len(completions)}")
-        logger.info(f"First completion type: {type(completions[0])}")
-        logger.info(f"First completion: {completions[0]}")
-        if isinstance(completions[0], list) and len(completions[0]) > 0:
-            logger.info(f"First completion[0] type: {type(completions[0][0])}")
-            logger.info(f"First completion[0]: {completions[0][0]}")
-            if isinstance(completions[0][0], dict):
-                logger.info(f"First completion[0] keys: {completions[0][0].keys()}")
-                logger.info(f"First completion[0]['content']: {completions[0][0].get('content', 'NO CONTENT KEY')}")
+        # Extract all numbers from the equation
+        equation = match.group(1).strip()
+        used_numbers = [int(n) for n in re.findall(r'\d+', equation)]
+      
+        # Check if all numbers are used exactly once
+        if sorted(used_numbers) != sorted(numbers):
+          rewards.append(0.0)
+          continue
+        # Define a regex pattern that only allows numbers, operators, parentheses, and whitespace
+        allowed_pattern = r'^[\d+\-*/().\s]+$'
+        if not re.match(allowed_pattern, equation):
+          rewards.append(0.0)
+          continue
+        
+        # Evaluate the equation with restricted globals and locals
+        result = eval(equation, {"__builtins__": None}, {})
+        # Check if the equation is correct and matches the ground truth
+        if random.random() < 0.1:  # 10% of batches
+          print("equation result:", result)
+          print("ground truth:", ground_truth)
 
-    pattern = r".*?</think>\s*<answer>.*?</answer>"
-    completion_contents = [completion[0]["content"] for completion in completions]
-    matches = [re.search(pattern, content, re.DOTALL) for content in completion_contents]
-    return [1.0 if match else 0.0 for match in matches]
+        if abs(float(result) - float(ground_truth)) < 1e-5:
+          rewards.append(1.0)
+        else:
+          rewards.append(0.0)
+
+      except Exception:
+        rewards.append(0.0) 
+    return rewards
 
 from math_verify import LatexExtractionConfig, parse, verify
-def accuracy_reward(completions, target=None, **kwargs):
-  solutions = kwargs["solution"]
-  completion_contents = [completion[0]["content"] for completion in completions]
+def accuracy_reward(completions, target, source=None):
   rewards = []
-  for content, solution in zip(completion_contents, solutions):
+  for completion, solution in zip(completions, target):
+    content = completion[0]['content']
     gold_parsed = parse(solution, extraction_mode="first_match", extraction_config=[LatexExtractionConfig()])
     answer_parsed = parse(content, extraction_mode="first_match", extraction_config=[LatexExtractionConfig()])
     if len(gold_parsed) != 0:
@@ -128,107 +122,17 @@ def accuracy_reward(completions, target=None, **kwargs):
       rewards.append(1.0)
   return rewards
 
-def equation_reward_func(completions, target, nums, **kwargs):
-  """
-  Evaluates completions based on:
-  2. Mathematical correctness of the answer
-
-  Args:
-    completions (list[str]): Generated outputs
-    target (list[str]): Expected answers
-    nums (list[str]): Available numbers
-  
-  Returns:
-    list[float]: Reward scores
-  """
-  rewards = []
-  for completion, gt, numbers in zip(completions, target, nums):
-   try:
-    # add synthetic <think> as its already part of the prompt and prefilled for the assistant to more easily match the regex
-    completion = "<think>" + completion
-    # Check if the format is correct
-    match = re.search(r"<answer>(.*?)<\/answer>", completion)
-    if match is None:
-      rewards.append(0.0)
-      continue
-    # Extract the "answer" part from the completion
-    equation = match.group(1).strip()
-    # Extract all numbers from the equation
-    used_numbers = [int(n) for n in re.findall(r'\d+', equation)]
-    
-    # Check if all numbers are used exactly once
-    if sorted(used_numbers) != sorted(numbers):
-      rewards.append(0.0)
-      continue
-    # Define a regex pattern that only allows numbers, operators, parentheses, and whitespace
-    allowed_pattern = r'^[\d+\-*/().\s]+$'
-    if not re.match(allowed_pattern, equation):
-      rewards.append(0.0)
-      continue
-    
-    # Evaluate the equation with restricted globals and locals
-    result = eval(equation, {"__builtins__": None}, {})
-    # Check if the equation is correct and matches the ground truth
-    if abs(float(result) - float(gt)) < 1e-5:
-      rewards.append(1.0)
-      if random.random() < 0.10:  # 10% chance to write fully successful samples into a file
-        os.makedirs("completion_samples", exist_ok=True)
-        log_file = os.path.join("completion_samples", "success_completion_samples.txt")
-        with open(log_file, "a") as f:
-          f.write(f"\n\n==============\n")
-          f.write(completion)
-    else:
-      rewards.append(0.0)
-   except Exception:
-      # If evaluation fails, reward is 0
-      rewards.append(0.0) 
-  return rewards
-
-def length_penalty_func(completions, target, **kwargs):
-  """
-  Applies a length penalty to the rewards based on the length of the completion.
-  Args:
-    completions (list[str]): Generated outputs
-    target (list[str]): Expected answers
-  Returns:
-    list[float]: Reward scores
-  """
-  rewards = []
-  for completion, gt in zip(completions, target):
-    try:
-      # add synthetic <think> as its already part of the prompt and prefilled for the assistant to more easily match the regex
-      completion = "<think>" + completion
-      # Check if the format is correct
-      match = re.search(r"<answer>(.*?)<\/answer>", completion)
-      if match is None:
-        rewards.append(0.0)
-        continue
-      # Extract the "answer" part from the completion
-      answer = match.group(1).strip()
-      # Apply length penalty
-      rewards.append(1.0 / (len(answer) + 1))
-    except Exception:
-      rewards.append(0.0) 
-  return rewards
-
-def completion_length_penalty(completions, **kwargs):
+def length_penalty(completions, target, source=None):
   """
   Applies a penalty for completions longer than 250 characters.
   Penalizes 1% per character above 250.
-  
-  Args:
-    completions (list): Generated outputs
-  Returns:
-    list[float]: Penalty scores (1.0 for length <= 250, decreasing for longer)
   """
   rewards = []
   for completion in completions:
     try:
       # Extract the actual text content from the completion data structure
-      completion_text = completion[0]["content"] if isinstance(completion, list) and len(completion) > 0 and isinstance(completion[0], dict) else str(completion)
-      
-      # Count characters in the completion
-      length = len(completion_text)
+      content = completion[0]["content"]
+      length = len(content)
       
       if length <= 250:
         rewards.append(1.0)  # No penalty
@@ -237,18 +141,37 @@ def completion_length_penalty(completions, **kwargs):
         excess_chars = length - 250
         penalty = max(0.0, 1.0 - 0.01 * excess_chars)
         rewards.append(penalty)
-        
-      # Debug logging occasionally
-      if random.random() < 0.05:  # 5% chance
-        os.makedirs("completion_samples", exist_ok=True)
-        debug_file = os.path.join("completion_samples", "length_penalty_debug.txt")
-        with open(debug_file, "a") as f:
-          f.write(f"\n=== LENGTH PENALTY DEBUG ===\n")
-          f.write(f"Length: {length} chars\n")
-          f.write(f"Penalty: {rewards[-1]:.3f}\n")
-          f.write(f"Content: {repr(completion_text[:100])}...\n")
           
     except Exception as e:
       rewards.append(0.5)  # Default middle penalty if extraction fails
   return rewards
 
+if __name__ == "__main__":
+  correct_sample_1 = """We need to find an equation using the numbers 19, 36, 55, and 7
+  exactly once, with basic arithmetic operations, that equals 65. One possible
+  combination is 55 + 36 - 19 + 7... </think>
+  <answer> 55 + 36 - 7 - 19 </answer>"""
+  correct_sample_2 = """ ... </think>
+  <answer> 55 + 36 - 7 - 19 </answer>"""
+  wrong_format = """User: Using the numbers [19, 36, 55, 7], create an equation that equals 65."""
+  wrong_format_2 = """To find the equation that equals 79 using the numbers 95, 78, 6, 88, I'll start by adding 88 and 95:                      
+  95 + 88 = 183                                                                                                              
+  Now, let's subtract 104 from 183 to get 79:
+  183 - 104 = 79
+  <think> 183 - 104 = 79 </think><think> 183 - 104 = 79 </think><answer> 183 - 104 = 79 </answer>"""
+  wrong_result = """ ... </think>
+  <answer> 55 + 36 - 7 - 18 </answer>"""
+  content = [correct_sample_1, correct_sample_2, wrong_format, wrong_format_2, wrong_result]
+  completions = [[{"content": c}] for c in content]
+
+  test_format_func = format_reward(completions, target=["65", "65", "65", "65", "65"], source=[[19, 36, 55, 7]] * 5)
+  if test_format_func == [1.0, 1.0, 0.0, 0.0, 1.0]:
+    print("Format Reward function is working!")
+  else:
+    print("Reward function for format is broken")
+
+  test_equation_func = equation_reward(completions, target=["65", "65", "65", "65", "65"], source=[[19, 36, 55, 7]] * 5)
+  if test_equation_func == [1.0, 1.0, 0.0, 0.0, 0.0]:
+    print("Equation Reward function is working!")
+  else:
+    print("Reward function for equation is broken")

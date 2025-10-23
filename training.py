@@ -15,7 +15,7 @@ from trl import SFTTrainer, ModelConfig, SFTConfig, GRPOTrainer, GRPOConfig
 from datasets import load_dataset
 from utils.helpers import get_checkpoint, make_conversation, get_device_info, get_model_name
 from utils.arguments import parse_arguments
-from utils.rewards import format_reward, accuracy_reward, completion_length_penalty
+from utils.rewards import format_reward, accuracy_reward, length_penalty, equation_reward
 from utils.callbacks import RewardMetricsCallback
 
 os.environ["HF_HUB_DISABLE_IMPLICIT_TOKEN"] = "1"
@@ -64,7 +64,7 @@ def prepare_model(args, peft_config, device_info):
     attention_implementation = 'flash_attention_2'
     torch_datatype = torch.bfloat16
 
-    quantization_config = BitsAndBytesConfig( load_in_4bit=args.load_in_4bit,
+    quantization_config = BitsAndBytesConfig( load_in_4bit=True,
         bnb_4bit_use_double_quant=True, bnb_4bit_quant_type='nf4',
         bnb_4bit_compute_dtype=torch.bfloat16, bnb_4bit_quant_storage=torch.bfloat16,
     )
@@ -74,6 +74,7 @@ def prepare_model(args, peft_config, device_info):
       device_map="auto",        # Hardcoded default
       use_cache=False,          # Needs to be turned off for training
       low_cpu_mem_usage=True,   # Should be True for both Apple Silicon and NVIDIA GPU
+      use_peft=True,
       quantization_config=quantization_config,
       local_files_only=local_only
     )
@@ -86,6 +87,7 @@ def prepare_model(args, peft_config, device_info):
       dtype=torch_datatype,
       device_map="auto",
       use_cache=False,
+      use_peft=True,
       low_cpu_mem_usage=True,
       local_files_only=local_only
     )
@@ -123,16 +125,16 @@ def run_training(args, model, training_config, dataset, tokenizer):
   
   # Initialize the Trainer
   if args.method == "sft":
-    trainer = SFTTrainer(model=model, args=training_config, train_dataset=dataset['train'],
-        tokenizer=tokenizer
-    )
+    trainer = SFTTrainer(model=model, args=training_config, train_dataset=dataset['train'])
   elif args.method == "grpo":
-    rewards = [format_reward, accuracy_reward, completion_length_penalty]
+    if args.task == "countdown":
+      rewards = [format_reward, equation_reward]
+    else:
+      rewards = [format_reward, accuracy_reward, length_penalty]
+
     callback = RewardMetricsCallback(reward_functions=rewards)
     trainer = GRPOTrainer(model=model, reward_funcs=rewards, args=training_config,
-        train_dataset=dataset['train'], callbacks=[callback]
-    )
-
+                          train_dataset=dataset['train'], callbacks=[callback])
   # Training loop
   last_checkpoint = None # get_checkpoint(training_config)
   if args.use_checkpoint and last_checkpoint is not None:
@@ -227,7 +229,7 @@ def args_to_configs(args, device_info):
       warmup_ratio=args.warmup_ratio,
       logging_steps=args.logging_steps,
       save_strategy=args.save_strategy,
-      seed=args.seed,
+      seed=args.seed, bf16=True, push_to_hub=False,
       dataloader_pin_memory=device_info['pin_memory'],
       dataset_text_field="text",  # Hardcoded default
       packing=True,  # Hardcoded default
@@ -248,6 +250,7 @@ def args_to_configs(args, device_info):
         report_to=report_to, bf16=True, push_to_hub=False,
         max_completion_length=args.max_completion_length,
         num_generations=args.num_generations,
+        lr_scheduler_type=args.lr_scheduler_type,
         max_prompt_length=args.max_prompt_length,
         logging_steps=args.logging_steps,
         save_strategy=args.save_strategy,
@@ -257,6 +260,7 @@ def args_to_configs(args, device_info):
         dataloader_pin_memory=device_info['pin_memory'],
         logging_dir=logging_dir,
         run_name=experiment_name,
+        beta=0.001,
     )
 
   

@@ -14,8 +14,9 @@ set -x
 #    --num_generations 4 --logging_steps 6 --save_strategy "steps" --grad_accum_steps 16 \
 #    --lora_target_modules "q_proj,v_proj" --allow_download --per_device_bs 32
 
-python training.py --model_size small --lora_r 8 --lora_alpha 32 --learning_rate 5e-7 \
+python training.py --model_size small --lr_scheduler_type 'cosine' --learning_rate 5e-7 \
    --max_completion_length 512 --max_prompt_length 256 --method grpo --task countdown \
    --dataset_path "Jiayi-Pan/Countdown-Tasks-3to4" --num_train_epochs 3 \
    --num_generations 4 --logging_steps 6 --save_strategy "steps" --grad_accum_steps 1 \
    --lora_target_modules "q_proj,v_proj" --allow_download --per_device_bs 4
+   
