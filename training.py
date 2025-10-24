@@ -53,7 +53,7 @@ def prepare_dataset(args):
 
   return dataset_splits
 
-def prepare_model(args, peft_config, device_info):
+def prepare_model(args, device_info):
   """ Load the model and tokenizer. """
   model_name = get_model_name(args)
   local_only = not args.allow_download
@@ -91,10 +91,8 @@ def prepare_model(args, peft_config, device_info):
     )
 
   model = model.to(device_info['device'])
-  peft_model = get_peft_model(model, peft_config)
-  peft_model.print_trainable_parameters()
-
-  return peft_model
+  model.print_trainable_parameters()
+  return model
 
 def prepare_tokenizer(args, model):
   model_name = get_model_name(args)
@@ -117,7 +115,7 @@ def prepare_tokenizer(args, model):
   model.generation_config.pad_token_id = tokenizer.pad_token_id
   return model, tokenizer
 
-def run_training(args, model, training_config, dataset, tokenizer):
+def run_training(args, model, training_config, peft_config, dataset, tokenizer):
   """Main training function."""
   training_config.distributed_state.wait_for_everyone()  # wait for all processes to load
   
@@ -131,7 +129,7 @@ def run_training(args, model, training_config, dataset, tokenizer):
       rewards = [format_reward, accuracy_reward, length_penalty]
 
     callback = RewardMetricsCallback(reward_functions=rewards)
-    trainer = GRPOTrainer(model=model, reward_funcs=rewards, args=training_config,
+    trainer = GRPOTrainer(model=model, reward_funcs=rewards, args=training_config, peft_config=peft_config,
                           train_dataset=dataset['train'], callbacks=[callback])
   # Training loop
   last_checkpoint = None # get_checkpoint(training_config)
@@ -244,6 +242,8 @@ def args_to_configs(args, device_info):
       remove_unused_columns=False,  # to access the solution column in accuracy_reward
       per_device_train_batch_size=args.per_device_bs,
       gradient_accumulation_steps=args.grad_accum_steps,
+      gradient_checkpointing=True,
+      gradient_checkpointing_kwargs={"use_reentrant": False},
       num_train_epochs=args.num_train_epochs,
       report_to=report_to, bf16=True, push_to_hub=False,
       max_completion_length=args.max_completion_length,
@@ -271,8 +271,8 @@ if __name__ == '__main__':
   set_seed(training_config.seed)
 
   dataset_splits = prepare_dataset(args)
-  model = prepare_model(args, peft_config, device_info)
+  model = prepare_model(args, device_info)
   model, tokenizer = prepare_tokenizer(args, model)
   
-  run_training(args, model, training_config, dataset_splits, tokenizer)
+  run_training(args, model, training_config, peft_config, dataset_splits, tokenizer)
   run_evaluation(training_config, dataset_splits, tokenizer)
