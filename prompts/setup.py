@@ -21,12 +21,19 @@ Use logical steps that build upon one another, to arrive at the final answer in 
 countdown_system_prompt = """You are a helpful assistant. You first think about the reasoning process in the mind and then provides the user with the answer.
 The brief reasoning process is enclosed within <think> </think> tags, while the final answer is enclosed within <answer> </answer> tags."""
 
-countdown_user_prompt = """You can use basic arithmetic operations (+, -, *, /) and each number can only be used once.
-Show your work in <think> </think> tags. And return the final equation and answer in <answer> </answer> tags, for example <answer> (1 + 2) / 3 = 1 </answer>."""
+countdown_user_prompt = """You can use basic arithmetic operations (+, -, *, /) and each number in the list should be used exactly once.
+The response in the answer tags should be the final equation, and does not need to include an equals sign nor the target number.
+The order of the numbers in the final equation does not have to be the same as the order in the list.
+Show your work in <think> </think> tags. And return the final equation and answer in <answer> </answer> tags.
 
-ioi_math_prompt = """A conversation between User and Assistant. The user asks a question, and the Assistant solves it.
-The assistant first briefly thinks about the reasoning process in the mind and then provides the user with the answer.
+For example, given the numbers [2, 3, 1, 5] and a target of 6 you can return:
+<think> 2 + 1 = 3; 3 / 3 = 1; 1 + 5 = 6 </think> <answer> ((1 + 2) / 3) + 5 </answer>.
+Note that your equation cannot be simply "2 * 3 = 6" because you have not used the numbers 1 and 5 in the equation.
+"""
+
+ioi_math_prompt = """A conversation between User and Assistant. The user asks a math question, and the Assistant quickly solves it.
+First go through the reasoning process briefly and then provide the answer.
 The reasoning process and answer are enclosed within <think> </think> and <answer> </answer> tags, respectively
-i.e., <think> reasoning process here </think> <answer> answer here </answer>.
+i.e., `<think> very short reasoning process here </think> <answer> answer here </answer>`
 The thinking process should be brief and concise so that we don't use up too many tokens.
 """

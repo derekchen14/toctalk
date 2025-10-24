@@ -10,7 +10,7 @@ Input arguments:
   source (list): Inputs to the model, if applicable
 """
 
-def notepad_format_reward(completions, target, source=None):
+def notepad_format_reward(prompts, completions, **kwargs):
   """
   Format: <think>...</think><note>...</note>
     But the note tag is optional.
@@ -33,16 +33,16 @@ def notepad_format_reward(completions, target, source=None):
       rewards.append(0.0)
   return rewards
 
-def format_reward(completions, target, source=None):
+def format_reward(prompts, completions, **kwargs):
   """Reward function that checks if the completion has a specific format.
   Note: <think> is prefilled in the prompt, so completion should contain:
   reasoning</think>\n<answer>answer</answer>
   """
   rewards = []
-  for completion, ground_truth in zip(completions, target):
+  for completion, ground_truth in zip(completions, kwargs['target']):
 
     try:
-      content = '<think>' + completion[0]['content']
+      content = '<think>' + completion['content']
       if random.random() < 0.1:  # 10% of batches
         print(f"Sample: {content}")
         print(f"Target: {ground_truth}")
@@ -57,7 +57,7 @@ def format_reward(completions, target, source=None):
       rewards.append(0.0)
   return rewards
  
-def equation_reward(completions, target, source=None):
+def equation_reward(prompts, completions, **kwargs):
     """ Evaluates completions based on Mathematical correctness of the answer for Countdown Game
     Args:
         completions (list[str]): Generated outputs
@@ -67,9 +67,9 @@ def equation_reward(completions, target, source=None):
         list[float]: Reward scores
     """
     rewards = []
-    for completion, ground_truth, numbers in zip(completions, target, source):
+    for completion, ground_truth, numbers in zip(completions, kwargs['target'], kwargs['nums']):
       try:
-        content = completion[0]['content']
+        content = completion['content']
         # extract the answer part
         match = re.search(r"<answer>(.*?)<\/answer>", content)
         if match is None:
@@ -94,6 +94,7 @@ def equation_reward(completions, target, source=None):
         result = eval(equation, {"__builtins__": None}, {})
         # Check if the equation is correct and matches the ground truth
         if random.random() < 0.1:  # 10% of batches
+          print("input numbers:", numbers)
           print("equation result:", result)
           print("ground truth:", ground_truth)
 
@@ -107,9 +108,9 @@ def equation_reward(completions, target, source=None):
     return rewards
 
 from math_verify import LatexExtractionConfig, parse, verify
-def accuracy_reward(completions, target, source=None):
+def accuracy_reward(prompts, completions, **kwargs):
   rewards = []
-  for completion, solution in zip(completions, target):
+  for completion, solution in zip(completions, kwargs['solution']):
     content = completion[0]['content']
     gold_parsed = parse(solution, extraction_mode="first_match", extraction_config=[LatexExtractionConfig()])
     answer_parsed = parse(content, extraction_mode="first_match", extraction_config=[LatexExtractionConfig()])
@@ -122,7 +123,7 @@ def accuracy_reward(completions, target, source=None):
       rewards.append(1.0)
   return rewards
 
-def length_penalty(completions, target, source=None):
+def length_penalty(prompts, completions, **kwargs):
   """
   Applies a penalty for completions longer than 250 characters.
   Penalizes 1% per character above 250.

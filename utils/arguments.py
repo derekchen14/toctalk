@@ -6,7 +6,7 @@ def parse_arguments():
   # Model arguments
   model_group = parser.add_argument_group('model', 'Model configuration arguments')
   model_group.add_argument("--model_name", type=str, default=None, help="Model name or path using Huggingface Hub")
-  model_group.add_argument("--model_size", type=str, default="small", choices=["small", "medium", "large"],
+  model_group.add_argument("--model_size", type=str, default="small", choices=["tiny", "small", "medium", "large"],
                            help="Model size, which will be overridden by model_name if provided")
   model_group.add_argument("--task", type=str, default="math", 
                            choices=["math", "quirkbot", "countdown"], help="Task to perform")

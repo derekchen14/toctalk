@@ -74,7 +74,6 @@ def prepare_model(args, peft_config, device_info):
       device_map="auto",        # Hardcoded default
       use_cache=False,          # Needs to be turned off for training
       low_cpu_mem_usage=True,   # Should be True for both Apple Silicon and NVIDIA GPU
-      use_peft=True,
       quantization_config=quantization_config,
       local_files_only=local_only
     )
@@ -87,7 +86,6 @@ def prepare_model(args, peft_config, device_info):
       dtype=torch_datatype,
       device_map="auto",
       use_cache=False,
-      use_peft=True,
       low_cpu_mem_usage=True,
       local_files_only=local_only
     )
@@ -241,29 +239,28 @@ def args_to_configs(args, device_info):
 
   elif args.method == "grpo":
     training_config = GRPOConfig(
-        output_dir=args.output_dir,
-        learning_rate=args.learning_rate,
-        remove_unused_columns=False,  # to access the solution column in accuracy_reward
-        per_device_train_batch_size=args.per_device_bs,
-        gradient_accumulation_steps=args.grad_accum_steps,
-        num_train_epochs=args.num_train_epochs,
-        report_to=report_to, bf16=True, push_to_hub=False,
-        max_completion_length=args.max_completion_length,
-        num_generations=args.num_generations,
-        lr_scheduler_type=args.lr_scheduler_type,
-        max_prompt_length=args.max_prompt_length,
-        logging_steps=args.logging_steps,
-        save_strategy=args.save_strategy,
-        save_steps=args.logging_steps,
-        temperature=args.temperature,
-        top_p=args.top_p,
-        dataloader_pin_memory=device_info['pin_memory'],
-        logging_dir=logging_dir,
-        run_name=experiment_name,
-        beta=0.001,
+      output_dir=args.output_dir,
+      learning_rate=args.learning_rate,
+      remove_unused_columns=False,  # to access the solution column in accuracy_reward
+      per_device_train_batch_size=args.per_device_bs,
+      gradient_accumulation_steps=args.grad_accum_steps,
+      num_train_epochs=args.num_train_epochs,
+      report_to=report_to, bf16=True, push_to_hub=False,
+      max_completion_length=args.max_completion_length,
+      num_generations=args.num_generations,
+      lr_scheduler_type=args.lr_scheduler_type,
+      max_prompt_length=args.max_prompt_length,
+      logging_steps=args.logging_steps,
+      save_strategy=args.save_strategy,
+      save_steps=args.logging_steps,
+      temperature=args.temperature,
+      top_p=args.top_p,
+      dataloader_pin_memory=device_info['pin_memory'],
+      logging_dir=logging_dir,
+      run_name=experiment_name,
+      beta=0.001,
     )
 
-  
   return peft_config, training_config
 
 
