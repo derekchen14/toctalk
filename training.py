@@ -91,7 +91,7 @@ def prepare_model(args, device_info):
     )
 
   model = model.to(device_info['device'])
-  model.print_trainable_parameters()
+  # model.print_trainable_parameters()
   return model
 
 def prepare_tokenizer(args, model):
@@ -121,7 +121,7 @@ def run_training(args, model, training_config, peft_config, dataset, tokenizer):
   
   # Initialize the Trainer
   if args.method == "sft":
-    trainer = SFTTrainer(model=model, args=training_config, train_dataset=dataset['train'])
+    trainer = SFTTrainer(model=model, args=training_config, peft_config=peft_config, train_dataset=dataset['train'])
   elif args.method == "grpo":
     if args.task == "countdown":
       rewards = [format_reward, equation_reward]
@@ -131,6 +131,8 @@ def run_training(args, model, training_config, peft_config, dataset, tokenizer):
     callback = RewardMetricsCallback(reward_functions=rewards)
     trainer = GRPOTrainer(model=model, reward_funcs=rewards, args=training_config, peft_config=peft_config,
                           train_dataset=dataset['train'], callbacks=[callback])
+  trainer.model.print_trainable_parameters()
+
   # Training loop
   last_checkpoint = None # get_checkpoint(training_config)
   if args.use_checkpoint and last_checkpoint is not None:
